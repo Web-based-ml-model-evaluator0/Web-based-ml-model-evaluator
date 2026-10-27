@@ -1,0 +1,97 @@
+{
+  "requirement_id": "ML-NF-001",
+  "test_case_id": "TC-PERF-01",
+  "timestamp_utc": "2026-10-27T04:16:31.536406+00:00",
+  "url": "http://127.0.0.1:8501",
+  "runs_requested": 10,
+  "successful_runs": 10,
+  "failed_runs": 0,
+  "average_response_time_ms": 15.069,
+  "median_response_time_ms": 15.181,
+  "p95_response_time_ms": 43.4,
+  "srs_target_ms": 3000.0,
+  "performance_target_result": "PASS",
+  "scope_note": "Measures selected page HTTP response only; not model training or unimplemented API endpoints.",
+  "requests": [
+    {
+      "run": 1,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 43.4,
+      "success": true,
+      "error": ""
+    },
+    {
+      "run": 2,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 15.569,
+      "success": true,
+      "error": ""
+    },
+    {
+      "run": 3,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 14.861,
+      "success": true,
+      "error": ""
+    },
+    {
+      "run": 4,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 1.963,
+      "success": true,
+      "error": ""
+    },
+    {
+      "run": 5,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 1.669,
+      "success": true,
+      "error": ""
+    },
+    {
+      "run": 6,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 2.285,
+      "success": true,
+      "error": ""
+    },
+    {
+      "run": 7,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 24.685,
+      "success": true,
+      "error": ""
+    },
+    {
+      "run": 8,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 15.501,
+      "success": true,
+      "error": ""
+    },
+    {
+      "run": 9,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 16.218,
+      "success": true,
+      "error": ""
+    },
+    {
+      "run": 10,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 14.539,
+      "success": true,
+      "error": ""
+    }
+  ]
+}
