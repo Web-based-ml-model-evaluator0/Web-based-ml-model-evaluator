@@ -49,7 +49,7 @@ def main() -> int:
         writer = csv.DictWriter(handle, fieldnames=list(results[0].keys())); writer.writeheader(); writer.writerows(results)
     p95 = percentile(successful, 95) if successful else None
     decision = ("PASS" if successful and len(successful) == args.runs and p95 <= args.target_ms
-                else "FAIL" if args.target_ms is not None else "NOT_VERIFIED_TARGET_NOT_PROVIDED")
+                else "FAIL")
     summary = {"requirement_id": "ML-NF-001", "test_case_id": "TC-PERF-01",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(), "url": args.url, "runs_requested": args.runs,
         "successful_runs": len(successful), "failed_runs": args.runs - len(successful),
