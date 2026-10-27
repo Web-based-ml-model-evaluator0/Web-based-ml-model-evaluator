@@ -17,11 +17,11 @@ The application entry point is a Streamlit app (`app.py`). This initial check me
 python tests/performance_test.py --url http://127.0.0.1:8501 --runs 10
 ```
 
-Once the approved SRS target is known, pass it explicitly using `--target-ms <SRS_TARGET_IN_MS>`. Do not use an example value as the project requirement.
+The approved SRS defines the target as a 95th-percentile non-training page/API response time of **3 seconds (3000 ms)**. The script uses `--target-ms 3000` by default. Override it only if the approved SRS changes.
 
 The script writes `performance-results/tc-perf-01-results.csv` and `performance-results/tc-perf-01-summary.json`. The CSV records every request; the JSON reports average, median, P95, failures, target and decision.
 
-If `--target-ms` is omitted, the result is `NOT_VERIFIED_TARGET_NOT_PROVIDED`; the script does not invent an SRS target.
+The result is PASS only when all requests succeed and the measured P95 is at or below the 3000 ms SRS target. Otherwise it reports FAIL; investigate errors and rerun after fixes.
 
 ## Test protocol
 1. Record OS, Python version, app version, test date and relevant test conditions.
