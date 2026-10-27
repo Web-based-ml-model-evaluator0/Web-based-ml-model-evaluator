@@ -5,7 +5,7 @@ Example:
   streamlit run app.py
   python tests/performance_test.py --url http://127.0.0.1:8501 --runs 10
 
-Pass --target-ms only after confirming the target in the approved SRS.
+The SRS target is 3000 ms at the 95th percentile for non-training page/API responses.
 """
 from __future__ import annotations
 import argparse, csv, json, statistics, time, urllib.error, urllib.request
@@ -23,12 +23,12 @@ def main() -> int:
     parser.add_argument("--url", default="http://127.0.0.1:8501", help="Page URL to measure")
     parser.add_argument("--runs", type=int, default=10)
     parser.add_argument("--timeout", type=float, default=10.0)
-    parser.add_argument("--target-ms", type=float, default=None, help="Approved SRS target in milliseconds")
+    parser.add_argument("--target-ms", type=float, default=3000.0, help="SRS target in milliseconds (default: 3000)")
     parser.add_argument("--out-dir", default="performance-results")
     args = parser.parse_args()
     if args.runs < 1: parser.error("--runs must be at least 1")
     if args.timeout <= 0: parser.error("--timeout must be positive")
-    if args.target_ms is not None and args.target_ms <= 0: parser.error("--target-ms must be positive")
+    if args.target_ms <= 0: parser.error("--target-ms must be positive")
     results = []
     for number in range(1, args.runs + 1):
         request = urllib.request.Request(args.url, headers={"User-Agent": "ML-NF-001-performance-check/1.0"})
