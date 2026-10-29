@@ -39,7 +39,12 @@ st.set_page_config(
     layout="wide",
 )
 
-# ==================================================\n# AUTHENTICATION (ML-F-001)\n# ==================================================\nshow_login_gate(st)\nshow_logout_button(st)\n
+# ==================================================
+# AUTHENTICATION (ML-F-001)
+# ==================================================
+show_login_gate(st)
+show_logout_button(st)
+
 st.title("Web Based ML Model Evaluator")
 st.write(
     "Upload a CSV dataset, explore and validate the data, "
