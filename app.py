@@ -4,6 +4,8 @@ import math
 import pandas as pd
 import streamlit as st
 
+from auth import show_login_gate, show_logout_button
+
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
@@ -37,6 +39,7 @@ st.set_page_config(
     layout="wide",
 )
 
+# ==================================================\n# AUTHENTICATION (ML-F-001)\n# ==================================================\nshow_login_gate(st)\nshow_logout_button(st)\n
 st.title("Web Based ML Model Evaluator")
 st.write(
     "Upload a CSV dataset, explore and validate the data, "
