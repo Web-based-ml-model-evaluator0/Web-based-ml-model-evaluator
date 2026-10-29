@@ -238,8 +238,19 @@ def main() -> None:
                 })
                 st.dataframe(results_df, use_container_width=True)
 
-            except (PreprocessingError, DatasetValidationError, Exception) as e:
-                st.error(f"Training / Evaluation Error: {str(e)}")
+                
+            except (PreprocessingError, DatasetValidationError) as e:
+                st.error(f"Unable to evaluate this dataset: {e}")
+                st.info(
+                    "Check your target and feature selections, missing values, "
+                    "and dataset format, then try again."
+                )
+            except Exception:
+                st.error(
+                    "Model evaluation failed unexpectedly. "
+                    "Check your dataset and model settings, then try again."
+                )
+
 
 
 if __name__ == "__main__":
