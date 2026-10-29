@@ -39,10 +39,16 @@ def authenticate_credentials(username: str, password: str, users: Mapping[str, s
     return verify_password(password, stored_hash)
 
 def show_login_gate(st) -> None:
-    users = st.secrets.get("auth_users", {})
+    try:
+        users = st.secrets.get("auth_users", {})
+    except Exception:
+        # Streamlit raises when no secrets file/provider configuration exists.
+        users = {}
     if not st.session_state.get("authenticated", False):
         st.title("Sign in")
         st.caption("Use the account provided by your project administrator.")
+        if not users:
+            st.warning("Login is not configured yet. An administrator must add accounts to Streamlit secrets.")
         with st.form("login_form", clear_on_submit=False):
             username = st.text_input("Username")
             password = st.text_input("Password", type="password")
