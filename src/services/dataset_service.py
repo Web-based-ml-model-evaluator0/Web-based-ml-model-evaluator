@@ -49,7 +49,7 @@ class DatasetService:
         except DatasetValidationError:
             raise
         except pd.errors.EmptyDataError:
-            raise DatasetValidationError("The CSV file has no content or headers.")
+            raise DatasetValidationError("The CSV file is empty (has no content or headers).")
         except pd.errors.ParserError as e:
             raise DatasetValidationError(f"Malformed CSV structure: {str(e)}")
         except Exception as e:
