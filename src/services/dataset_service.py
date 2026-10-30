@@ -1,3 +1,4 @@
+
 """
 Dataset Service module (ML-F-002, ML-F-003, ML-F-004, ML-SR-004, ML-SR-007).
 Handles loading, validation, profiling, and schema inspection for datasets.
@@ -5,7 +6,6 @@ Handles loading, validation, profiling, and schema inspection for datasets.
 
 from typing import Any, Dict, List, Tuple
 from pathlib import Path
-import io
 import pandas as pd
 
 
@@ -39,13 +39,16 @@ class DatasetService:
                 if path.stat().st_size == 0:
                     raise DatasetValidationError("The uploaded CSV file is empty (0 bytes).")
                 df = pd.read_csv(path)
+
             elif hasattr(file_source, "read"):
                 # File-like object (e.g. Streamlit UploadedFile or io.BytesIO)
                 if hasattr(file_source, "size") and file_source.size == 0:
                     raise DatasetValidationError("The uploaded CSV file is empty (0 bytes).")
                 df = pd.read_csv(file_source)
+
             else:
                 raise DatasetValidationError("Unsupported file source type.")
+
         except DatasetValidationError:
             raise
         except pd.errors.EmptyDataError:
@@ -60,24 +63,58 @@ class DatasetService:
     @classmethod
     def validate_dataset(cls, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Validates that DataFrame is not empty, has at least two columns and rows,
-        and has valid column names.
+        Validates dataset structure, headers, and usable data.
+        Ensures the DataFrame has at least two columns and valid rows.
         """
         if df is None or not isinstance(df, pd.DataFrame):
             raise DatasetValidationError("Invalid DataFrame object.")
 
+        if len(df.columns) < 2:
+            raise DatasetValidationError(
+                "The dataset must have at least 2 columns (features and target)."
+            )
+
         if df.empty or len(df) == 0:
             raise DatasetValidationError("The dataset contains 0 rows.")
 
-        if len(df.columns) < 2:
+        # Normalize column names for consistent validation
+        df.columns = [str(column).strip() for column in df.columns]
+
+        # Check for missing or unnamed column headers
+        unnamed_cols = [
+            column for column in df.columns
+            if not column or column.startswith("Unnamed:")
+        ]
+
+        if unnamed_cols:
             raise DatasetValidationError(
-                f"The dataset must have at least 2 columns (features and target), found {len(df.columns)}."
+                f"Invalid or unnamed column headers found: {unnamed_cols}"
             )
 
-        # Check for unreadable/unnamed empty column headers
-        unnamed_cols = [c for c in df.columns if str(c).startswith("Unnamed:")]
-        if len(unnamed_cols) == len(df.columns):
-            raise DatasetValidationError("The CSV appears to lack valid header names.")
+        # Ensure column names are unique
+        if not df.columns.is_unique:
+            raise DatasetValidationError(
+                "Column names must be unique. Please remove duplicate headers."
+            )
+
+        # Reject datasets that contain no usable values
+        if df.dropna(how="all").empty:
+            raise DatasetValidationError(
+                "The dataset contains no usable data."
+            )
+
+        # Remove rows that contain no values at all
+        df = df.dropna(how="all").reset_index(drop=True)
+
+        # Reject columns containing no usable values
+        empty_columns = [
+            column for column in df.columns if df[column].isna().all()
+        ]
+
+        if empty_columns:
+            raise DatasetValidationError(
+                f"These columns contain no usable values: {empty_columns}"
+            )
 
         return df
 
@@ -91,6 +128,7 @@ class DatasetService:
             raise DatasetValidationError("Cannot profile a null DataFrame.")
 
         columns_info = []
+
         for col in df.columns:
             columns_info.append({
                 "name": str(col),
@@ -108,8 +146,12 @@ class DatasetService:
             "column_details": columns_info,
             "has_missing_values": bool(df.isnull().sum().sum() > 0),
             "total_missing_values": int(df.isnull().sum().sum()),
-            "numeric_columns": [str(c) for c in df.select_dtypes(include=["number"]).columns],
-            "categorical_columns": [str(c) for c in df.select_dtypes(exclude=["number"]).columns],
+            "numeric_columns": [
+                str(c) for c in df.select_dtypes(include=["number"]).columns
+            ],
+            "categorical_columns": [
+                str(c) for c in df.select_dtypes(exclude=["number"]).columns
+            ],
         }
 
     @classmethod
@@ -124,16 +166,27 @@ class DatasetService:
         Ensures target column exists, is not in features, and features is non-empty.
         """
         if target_column not in df.columns:
-            raise DatasetValidationError(f"Target column '{target_column}' does not exist in dataset.")
+            raise DatasetValidationError(
+                f"Target column '{target_column}' does not exist in dataset."
+            )
 
         if not feature_columns:
-            raise DatasetValidationError("At least one feature column must be selected.")
+            raise DatasetValidationError(
+                "At least one feature column must be selected."
+            )
 
         if target_column in feature_columns:
-            raise DatasetValidationError("Target column cannot also be selected as an input feature.")
+            raise DatasetValidationError(
+                "Target column cannot also be selected as an input feature."
+            )
 
-        missing_features = [col for col in feature_columns if col not in df.columns]
+        missing_features = [
+            col for col in feature_columns if col not in df.columns
+        ]
+
         if missing_features:
-            raise DatasetValidationError(f"Selected feature columns not found in dataset: {missing_features}")
+            raise DatasetValidationError(
+                f"Selected feature columns not found in dataset: {missing_features}"
+            )
 
         return feature_columns, target_column
