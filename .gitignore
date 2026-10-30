@@ -26,3 +26,15 @@ Thumbs.db
 experiments/
 logs/
 *.log
+
+# Authentication secrets
+.streamlit/secrets.toml
+
+# Local authentication database
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment variables
+.env
+.env.*
