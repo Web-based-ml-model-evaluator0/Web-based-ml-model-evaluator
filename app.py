@@ -4,6 +4,8 @@ import math
 import pandas as pd
 import streamlit as st
 
+from auth import show_login_gate, show_logout_button
+
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
@@ -36,6 +38,12 @@ st.set_page_config(
     page_icon="📊",
     layout="wide",
 )
+
+# ==================================================
+# AUTHENTICATION (ML-F-001)
+# ==================================================
+show_login_gate(st)
+show_logout_button(st)
 
 st.title("Web Based ML Model Evaluator")
 st.write(
