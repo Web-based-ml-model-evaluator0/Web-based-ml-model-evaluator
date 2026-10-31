@@ -1,0 +1,41 @@
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Experiment outputs
+experiments/
+logs/
+*.log
+
+# Authentication secrets
+.streamlit/secrets.toml
+
+# Local authentication database
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment variables
+.env
+.env.*
