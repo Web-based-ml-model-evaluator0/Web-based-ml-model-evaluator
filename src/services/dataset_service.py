@@ -95,7 +95,6 @@ class DatasetService:
                 df = pd.read_csv(file_source)
 
             else:
-                raise DatasetValidationError("Unsupported file source type.")
                 raise DatasetValidationError(
                     "Unsupported file source type."
                 )
@@ -124,7 +123,6 @@ class DatasetService:
     def validate_dataset(cls, df: pd.DataFrame) -> pd.DataFrame:
         """
         Validates dataset structure, headers, and usable data.
-        Ensures the DataFrame has at least two columns and valid rows.
 
         Ensures the DataFrame contains:
         - At least two columns.
@@ -160,18 +158,6 @@ class DatasetService:
             for column in df.columns
         ]
 
-        # Check for missing or unnamed column headers
-        unnamed_cols = [
-            column for column in df.columns
-            if not column or column.startswith("Unnamed:")
-        ]
-
-        if unnamed_cols:
-            raise DatasetValidationError(
-                f"Invalid or unnamed column headers found: {unnamed_cols}"
-            )
-
-        # Ensure column names are unique
         # Reject blank column names
         if any(not column for column in df.columns):
             raise DatasetValidationError(
@@ -207,7 +193,6 @@ class DatasetService:
         # Remove completely empty rows
         df = df.dropna(how="all").reset_index(drop=True)
 
-        # Reject columns containing no usable values
         # Reject columns containing only missing values
         empty_columns = [
             column
@@ -255,13 +240,6 @@ class DatasetService:
             "num_columns": len(df.columns),
             "columns": [str(c) for c in df.columns],
             "column_details": columns_info,
-            "has_missing_values": bool(df.isnull().sum().sum() > 0),
-            "total_missing_values": int(df.isnull().sum().sum()),
-            "numeric_columns": [
-                str(c) for c in df.select_dtypes(include=["number"]).columns
-            ],
-            "categorical_columns": [
-                str(c) for c in df.select_dtypes(exclude=["number"]).columns
             "has_missing_values": bool(
                 df.isnull().sum().sum() > 0
             ),
@@ -298,7 +276,6 @@ class DatasetService:
 
         if target_column not in df.columns:
             raise DatasetValidationError(
-                f"Target column '{target_column}' does not exist in dataset."
                 f"Target column '{target_column}' "
                 "does not exist in dataset."
             )
@@ -310,11 +287,6 @@ class DatasetService:
 
         if target_column in feature_columns:
             raise DatasetValidationError(
-                "Target column cannot also be selected as an input feature."
-            )
-
-        missing_features = [
-            col for col in feature_columns if col not in df.columns
                 "Target column cannot also be selected "
                 "as an input feature."
             )
@@ -331,7 +303,6 @@ class DatasetService:
 
         if missing_features:
             raise DatasetValidationError(
-                f"Selected feature columns not found in dataset: {missing_features}"
                 f"Selected feature columns not found in dataset: "
                 f"{missing_features}"
             )

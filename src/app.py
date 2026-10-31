@@ -477,8 +477,6 @@ def main() -> None:
                     "Predicted": y_pred[:10],
                 })
 
-            except (PreprocessingError, DatasetValidationError) as e:
-                st.error(f"Unable to evaluate this dataset: {e}")
                 st.dataframe(
                     results_df,
                     use_container_width=True,
