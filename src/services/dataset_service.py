@@ -24,6 +24,29 @@ class DatasetService:
 
     
     @classmethod
+    def _get_file_size(cls, file_source: Any) -> int:
+        """Determine file size for supported file sources."""
+
+        if hasattr(file_source, "size"):
+            return int(file_source.size)
+
+        if hasattr(file_source, "seek") and hasattr(file_source, "tell"):
+            try:
+                original_position = file_source.tell()
+                file_source.seek(0, 2)
+                size = file_source.tell()
+                file_source.seek(original_position)
+                return size
+            except (OSError, ValueError, AttributeError):
+                raise DatasetValidationError(
+                    "Unable to determine uploaded file size safely."
+                )
+
+        raise DatasetValidationError(
+            "Unable to determine uploaded file size safely."
+        )
+
+    @classmethod
     def load_csv(cls, file_source: Any) -> pd.DataFrame:
         """
         Loads and validates a CSV dataset from a file path or file-like object.
@@ -65,16 +88,19 @@ class DatasetService:
                         "Unsupported file type. Please upload a CSV file."
                     )
 
-                if hasattr(file_source, "size"):
-                    if file_source.size > cls.MAX_FILE_SIZE_BYTES:
-                        raise DatasetValidationError(
-                            "The uploaded file exceeds the 50 MB size limit."
-                        )
+                
+                file_size = cls._get_file_size(file_source)
 
-                    if file_source.size == 0:
-                        raise DatasetValidationError(
-                            "The uploaded CSV file is empty (0 bytes)."
-                        )
+                if file_size > cls.MAX_FILE_SIZE_BYTES:
+                    raise DatasetValidationError(
+                        "The uploaded file exceeds the 50 MB size limit."
+                    )
+
+                if file_size == 0:
+                    raise DatasetValidationError(
+                        "The uploaded CSV file is empty (0 bytes)."
+                    )
+
 
                 df = pd.read_csv(file_source)
 
