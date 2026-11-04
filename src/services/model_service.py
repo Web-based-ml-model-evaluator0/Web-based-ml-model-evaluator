@@ -1,7 +1,7 @@
 """
-Model Service module (ML-NF-008, ML-F-008, ML-F-009, ML-F-010).
-Provides a pluggable model registry and training orchestration that allows new
-machine learning algorithms to be registered without altering dataset or evaluation workflows.
+Model Service module (ML-NF-008, ML-F-008, ML-F-009, ML-F-010, ML-F-011).
+Provides a pluggable model registry, training orchestration, and progress tracking
+that allows machine learning workflows to report execution status and handle errors safely.
 """
 
 from typing import Any, Callable, Dict, List, Optional
@@ -15,6 +15,66 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 class ModelTrainingError(RuntimeError):
     """Raised when model training encounters an error or invalid input."""
     pass
+
+
+class TrainingStatus:
+    """Standard status states for ML model training lifecycle (ML-F-011)."""
+    PENDING = "PENDING"
+    STARTED = "STARTED"
+    PREPROCESSING = "PREPROCESSING"
+    TRAINING = "TRAINING"
+    EVALUATING = "EVALUATING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class TrainingStatusTracker:
+    """
+    Tracks and records lifecycle progress and status transitions for training (ML-F-011 / TC-TRAIN-02).
+    Provides feedback hooks for UI components and test harnesses.
+    """
+
+    def __init__(self, callback: Optional[Callable[[str, float, Dict[str, Any]], None]] = None) -> None:
+        self.state: str = TrainingStatus.PENDING
+        self.progress_pct: float = 0.0
+        self.history: List[Dict[str, Any]] = []
+        self.callback = callback
+        self.error_message: Optional[str] = None
+
+    def update(
+        self,
+        state: str,
+        progress_pct: float,
+        message: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Records a new state update and informs listeners."""
+        self.state = state
+        self.progress_pct = max(0.0, min(1.0, float(progress_pct)))
+        event = {
+            "state": state,
+            "progress_pct": self.progress_pct,
+            "message": message,
+            "timestamp": time.time(),
+            "metadata": metadata or {},
+        }
+        self.history.append(event)
+        if state == TrainingStatus.FAILED and message:
+            self.error_message = message
+        if self.callback:
+            try:
+                self.callback(state, self.progress_pct, event)
+            except Exception:
+                pass
+        return event
+
+    def is_completed(self) -> bool:
+        """Returns True if the training task finished successfully."""
+        return self.state == TrainingStatus.COMPLETED
+
+    def is_failed(self) -> bool:
+        """Returns True if the training task failed."""
+        return self.state == TrainingStatus.FAILED
 
 
 class ModelService:
@@ -88,34 +148,72 @@ class ModelService:
         X_train: Any,
         y_train: Any,
         params: Optional[Dict[str, Any]] = None,
+        status_tracker: Optional[TrainingStatusTracker] = None,
     ) -> Dict[str, Any]:
         """
-        Trains the specified model on training data and records execution metrics.
-        Validates inputs and handles training failures safely (ML-F-010 / TC-TRAIN-01).
+        Trains the specified model on training data, tracks progress, and records execution metrics.
+        Validates inputs and handles training failures safely (ML-F-010 / TC-TRAIN-01, ML-F-011 / TC-TRAIN-02).
         """
+        if status_tracker:
+            status_tracker.update(
+                TrainingStatus.STARTED,
+                0.10,
+                f"Validating training configuration for '{model_name}'...",
+            )
+
         if X_train is None or len(X_train) == 0:
-            raise ModelTrainingError("Training dataset X_train cannot be empty or None.")
+            msg = "Training dataset X_train cannot be empty or None."
+            if status_tracker:
+                status_tracker.update(TrainingStatus.FAILED, 0.10, msg)
+            raise ModelTrainingError(msg)
 
         if y_train is None or len(y_train) == 0:
-            raise ModelTrainingError("Target training labels y_train cannot be empty or None.")
+            msg = "Target training labels y_train cannot be empty or None."
+            if status_tracker:
+                status_tracker.update(TrainingStatus.FAILED, 0.10, msg)
+            raise ModelTrainingError(msg)
 
         if len(X_train) != len(y_train):
-            raise ModelTrainingError(
+            msg = (
                 f"Mismatched sample counts: X_train has {len(X_train)} samples, "
                 f"but y_train has {len(y_train)} labels."
             )
+            if status_tracker:
+                status_tracker.update(TrainingStatus.FAILED, 0.10, msg)
+            raise ModelTrainingError(msg)
 
         try:
             model = cls.create_model_instance(model_name, params)
         except Exception as e:
-            raise ModelTrainingError(f"Failed to instantiate model '{model_name}': {str(e)}") from e
+            msg = f"Failed to instantiate model '{model_name}': {str(e)}"
+            if status_tracker:
+                status_tracker.update(TrainingStatus.FAILED, 0.20, msg)
+            raise ModelTrainingError(msg) from e
+
+        if status_tracker:
+            status_tracker.update(
+                TrainingStatus.TRAINING,
+                0.50,
+                f"Fitting model '{model_name}' on {len(X_train)} training samples...",
+            )
 
         try:
             start_time = time.time()
             model.fit(X_train, y_train)
             training_time = time.time() - start_time
         except Exception as e:
-            raise ModelTrainingError(f"Training failed for '{model_name}': {str(e)}") from e
+            msg = f"Training failed for '{model_name}': {str(e)}"
+            if status_tracker:
+                status_tracker.update(TrainingStatus.FAILED, 0.70, msg)
+            raise ModelTrainingError(msg) from e
+
+        if status_tracker:
+            status_tracker.update(
+                TrainingStatus.COMPLETED,
+                1.00,
+                f"Training completed successfully in {training_time:.3f} seconds.",
+                metadata={"training_time": training_time},
+            )
 
         feature_count = None
         if hasattr(X_train, "shape") and len(X_train.shape) > 1:
@@ -130,6 +228,7 @@ class ModelService:
             "params": params or {},
             "sample_count": len(X_train),
             "feature_count": feature_count,
+            "status": TrainingStatus.COMPLETED,
         }
 
     @classmethod
