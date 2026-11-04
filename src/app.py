@@ -27,7 +27,7 @@ from src.services.preprocessing_service import (
     PreprocessingService,
     PreprocessingError,
 )
-from src.services.model_service import ModelService
+from src.services.model_service import ModelService, ModelTrainingError
 from src.services.evaluation_service import EvaluationService
 
 
@@ -486,6 +486,7 @@ def main() -> None:
             except (
                 PreprocessingError,
                 DatasetValidationError,
+                ModelTrainingError,
             ) as e:
 
                 st.error(
