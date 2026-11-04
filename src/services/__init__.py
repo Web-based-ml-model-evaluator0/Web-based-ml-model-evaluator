@@ -12,6 +12,7 @@ from .model_service import (
 )
 from .evaluation_service import EvaluationService
 from .experiment_service import ExperimentStorageService
+from .validation_service import APIInputValidator, APIValidationError
 
 __all__ = [
     "DatasetService",
@@ -24,4 +25,6 @@ __all__ = [
     "TrainingStatusTracker",
     "EvaluationService",
     "ExperimentStorageService",
+    "APIInputValidator",
+    "APIValidationError",
 ]
