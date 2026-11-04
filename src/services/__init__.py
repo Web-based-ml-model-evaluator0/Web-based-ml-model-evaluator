@@ -11,6 +11,7 @@ from .model_service import (
     TrainingStatusTracker,
 )
 from .evaluation_service import EvaluationService
+from .experiment_service import ExperimentStorageService
 
 __all__ = [
     "DatasetService",
@@ -22,4 +23,5 @@ __all__ = [
     "TrainingStatus",
     "TrainingStatusTracker",
     "EvaluationService",
+    "ExperimentStorageService",
 ]

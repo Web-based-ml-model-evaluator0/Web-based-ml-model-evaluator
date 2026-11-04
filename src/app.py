@@ -29,6 +29,7 @@ from src.services.preprocessing_service import (
 )
 from src.services.model_service import ModelService, ModelTrainingError, TrainingStatus, TrainingStatusTracker
 from src.services.evaluation_service import EvaluationService
+from src.services.experiment_service import ExperimentStorageService
 
 
 def main() -> None:
@@ -492,6 +493,23 @@ def main() -> None:
                     use_container_width=True,
                 )
 
+                # Step 9: Store Experiment (ML-F-016 / TC-HIST-01)
+                storage = ExperimentStorageService()
+                exp_config = {
+                    "model_name": selected_model_name,
+                    "task_type": task_type,
+                    "target_column": target_column,
+                    "feature_columns": feature_columns,
+                    "feature_count": len(feature_columns),
+                    "split_ratio": test_size,
+                    "missing_strategy": missing_strategy,
+                    "scale_features": scale_features,
+                    "parameters": configured_params,
+                    "training_time_seconds": training_time,
+                }
+                exp_id = storage.save_experiment(config=exp_config, metrics=eval_results)
+                st.info(f"💾 Experiment configuration and evaluation results saved: `{exp_id}`")
+
             # Specific application errors
             except (
                 PreprocessingError,
@@ -516,6 +534,20 @@ def main() -> None:
                     "Model evaluation failed unexpectedly. "
                     f"Error details: {e}"
                 )
+
+
+# --------------------------------------------------
+    # 6. Experiment History (ML-F-016)
+    # --------------------------------------------------
+    st.divider()
+    st.subheader("📜 Experiment History")
+    storage = ExperimentStorageService()
+    history = storage.list_experiments(limit=10)
+    if history:
+        with st.expander(f"View Previous Experiment Runs ({len(history)} stored)", expanded=False):
+            st.dataframe(pd.DataFrame(history), use_container_width=True)
+    else:
+        st.caption("No previous experiments stored yet.")
 
 
 if __name__ == "__main__":
