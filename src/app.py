@@ -27,8 +27,9 @@ from src.services.preprocessing_service import (
     PreprocessingService,
     PreprocessingError,
 )
-from src.services.model_service import ModelService
+from src.services.model_service import ModelService, ModelTrainingError, TrainingStatus, TrainingStatusTracker
 from src.services.evaluation_service import EvaluationService
+from src.services.experiment_service import ExperimentStorageService
 
 
 def main() -> None:
@@ -361,12 +362,22 @@ def main() -> None:
                     )
                 )
 
-                # Step 4: Train Model
+                # Step 4: Train Model with Status Tracking (ML-F-011)
+                status_box = st.status(f"Training workflow for '{selected_model_name}'...", expanded=True)
+                tracker = TrainingStatusTracker(
+                    callback=lambda state, pct, ev: status_box.write(f"[{state}] {ev.get('message', '')}")
+                )
                 train_result = ModelService.train_model(
                     model_name=selected_model_name,
                     X_train=X_train_proc,
                     y_train=y_train,
                     params=configured_params,
+                    status_tracker=tracker,
+                )
+                status_box.update(
+                    label=f"Training complete ({train_result['training_time_seconds']:.3f}s)",
+                    state="complete",
+                    expanded=False,
                 )
 
                 model = train_result["model"]
@@ -482,10 +493,28 @@ def main() -> None:
                     use_container_width=True,
                 )
 
+                # Step 9: Store Experiment (ML-F-016 / TC-HIST-01)
+                storage = ExperimentStorageService()
+                exp_config = {
+                    "model_name": selected_model_name,
+                    "task_type": task_type,
+                    "target_column": target_column,
+                    "feature_columns": feature_columns,
+                    "feature_count": len(feature_columns),
+                    "split_ratio": test_size,
+                    "missing_strategy": missing_strategy,
+                    "scale_features": scale_features,
+                    "parameters": configured_params,
+                    "training_time_seconds": training_time,
+                }
+                exp_id = storage.save_experiment(config=exp_config, metrics=eval_results)
+                st.info(f"💾 Experiment configuration and evaluation results saved: `{exp_id}`")
+
             # Specific application errors
             except (
                 PreprocessingError,
                 DatasetValidationError,
+                ModelTrainingError,
             ) as e:
 
                 st.error(
@@ -505,6 +534,20 @@ def main() -> None:
                     "Model evaluation failed unexpectedly. "
                     f"Error details: {e}"
                 )
+
+
+# --------------------------------------------------
+    # 6. Experiment History (ML-F-016)
+    # --------------------------------------------------
+    st.divider()
+    st.subheader("📜 Experiment History")
+    storage = ExperimentStorageService()
+    history = storage.list_experiments(limit=10)
+    if history:
+        with st.expander(f"View Previous Experiment Runs ({len(history)} stored)", expanded=False):
+            st.dataframe(pd.DataFrame(history), use_container_width=True)
+    else:
+        st.caption("No previous experiments stored yet.")
 
 
 if __name__ == "__main__":
