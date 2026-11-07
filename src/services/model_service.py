@@ -12,6 +12,11 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 
+class ModelTrainingError(RuntimeError):
+    """Raised when model training encounters an error or invalid input."""
+    pass
+
+
 class ModelService:
     """
     Manages the catalog of supported models, parameter validation, and model fitting.
@@ -86,17 +91,45 @@ class ModelService:
     ) -> Dict[str, Any]:
         """
         Trains the specified model on training data and records execution metrics.
+        Validates inputs and handles training failures safely (ML-F-010 / TC-TRAIN-01).
         """
-        model = cls.create_model_instance(model_name, params)
-        start_time = time.time()
-        model.fit(X_train, y_train)
-        training_time = time.time() - start_time
+        if X_train is None or len(X_train) == 0:
+            raise ModelTrainingError("Training dataset X_train cannot be empty or None.")
+
+        if y_train is None or len(y_train) == 0:
+            raise ModelTrainingError("Target training labels y_train cannot be empty or None.")
+
+        if len(X_train) != len(y_train):
+            raise ModelTrainingError(
+                f"Mismatched sample counts: X_train has {len(X_train)} samples, "
+                f"but y_train has {len(y_train)} labels."
+            )
+
+        try:
+            model = cls.create_model_instance(model_name, params)
+        except Exception as e:
+            raise ModelTrainingError(f"Failed to instantiate model '{model_name}': {str(e)}") from e
+
+        try:
+            start_time = time.time()
+            model.fit(X_train, y_train)
+            training_time = time.time() - start_time
+        except Exception as e:
+            raise ModelTrainingError(f"Training failed for '{model_name}': {str(e)}") from e
+
+        feature_count = None
+        if hasattr(X_train, "shape") and len(X_train.shape) > 1:
+            feature_count = int(X_train.shape[1])
+        elif hasattr(X_train, "columns"):
+            feature_count = len(X_train.columns)
 
         return {
             "model": model,
             "model_name": model_name,
             "training_time_seconds": training_time,
             "params": params or {},
+            "sample_count": len(X_train),
+            "feature_count": feature_count,
         }
 
     @classmethod
