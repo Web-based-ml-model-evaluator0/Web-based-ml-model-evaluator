@@ -27,7 +27,7 @@ from src.services.preprocessing_service import (
     PreprocessingService,
     PreprocessingError,
 )
-from src.services.model_service import ModelService
+from src.services.model_service import ModelService, ModelTrainingError, TrainingStatus, TrainingStatusTracker
 from src.services.evaluation_service import EvaluationService
 
 
@@ -361,12 +361,22 @@ def main() -> None:
                     )
                 )
 
-                # Step 4: Train Model
+                # Step 4: Train Model with Status Tracking (ML-F-011)
+                status_box = st.status(f"Training workflow for '{selected_model_name}'...", expanded=True)
+                tracker = TrainingStatusTracker(
+                    callback=lambda state, pct, ev: status_box.write(f"[{state}] {ev.get('message', '')}")
+                )
                 train_result = ModelService.train_model(
                     model_name=selected_model_name,
                     X_train=X_train_proc,
                     y_train=y_train,
                     params=configured_params,
+                    status_tracker=tracker,
+                )
+                status_box.update(
+                    label=f"Training complete ({train_result['training_time_seconds']:.3f}s)",
+                    state="complete",
+                    expanded=False,
                 )
 
                 model = train_result["model"]
@@ -486,6 +496,7 @@ def main() -> None:
             except (
                 PreprocessingError,
                 DatasetValidationError,
+                ModelTrainingError,
             ) as e:
 
                 st.error(
