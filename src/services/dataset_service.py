@@ -1,7 +1,10 @@
 
 """
-Dataset Service module (ML-F-002, ML-F-003, ML-F-004, ML-SR-004, ML-SR-007).
-Handles loading, validation, profiling, and schema inspection for datasets.
+Dataset Service module (ML-F-002, ML-F-003, ML-F-004, ML-F-005,
+ML-SR-004, ML-SR-007).
+
+Handles dataset loading, validation, profiling, schema inspection,
+and feature/target selection validation.
 """
 
 from typing import Any, Dict, List, Tuple
@@ -11,23 +14,23 @@ import pandas as pd
 
 
 class DatasetValidationError(ValueError):
-    """Raised when an uploaded dataset fails validation checks."""
+    """Raised when a dataset or feature/target selection is invalid."""
     pass
 
 
 class DatasetService:
     """
-    Encapsulates dataset ingestion, validation, and profiling logic.
-    Decoupled from UI rendering according to SAD 3.4 & 4.1.
+    Encapsulates dataset ingestion, validation, profiling,
+    and feature/target selection logic.
     """
 
-    MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB limit
+    MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
 
     @classmethod
     def load_csv(cls, file_source: Any) -> pd.DataFrame:
         """
-        Loads a CSV dataset from a file path or file-like object.
-        Validates basic tabular readability and file size.
+        Load a CSV from a file path, file-like object, or bytes buffer.
+        Validate its structure and contents.
         """
         if file_source is None:
             raise DatasetValidationError("No file source provided.")
@@ -41,56 +44,34 @@ class DatasetService:
                         f"File '{path}' does not exist."
                     )
 
-                if not path.is_file():
-                    raise DatasetValidationError(
-                        "The provided path is not a file."
-                    )
-
-                file_size = path.stat().st_size
-
-                if file_size == 0:
+                if path.stat().st_size == 0:
                     raise DatasetValidationError(
                         "The uploaded CSV file is empty (0 bytes)."
                     )
 
-                if file_size > cls.MAX_FILE_SIZE_BYTES:
+                if path.stat().st_size > cls.MAX_FILE_SIZE_BYTES:
                     raise DatasetValidationError(
-                        "The CSV file exceeds the maximum allowed size of 50 MB."
+                        "The CSV file exceeds the maximum size limit of 50 MB."
                     )
 
                 df = pd.read_csv(path)
 
             elif hasattr(file_source, "read"):
+                if (
+                    hasattr(file_source, "size")
+                    and file_source.size == 0
+                ):
+                    raise DatasetValidationError(
+                        "The uploaded CSV file is empty (0 bytes)."
+                    )
 
-                # File-like object (e.g. Streamlit UploadedFile or BytesIO)
-                if hasattr(file_source, "size"):
-                    if file_source.size == 0:
-                        raise DatasetValidationError(
-                            "The uploaded CSV file is empty (0 bytes)."
-                        )
-
-                    if file_source.size > cls.MAX_FILE_SIZE_BYTES:
-                        raise DatasetValidationError(
-                            "The CSV file exceeds the maximum allowed size of 50 MB."
-                        )
-
-                # Check size when getvalue() is available
-                if hasattr(file_source, "getvalue"):
-                    content = file_source.getvalue()
-
-                    if len(content) == 0:
-                        raise DatasetValidationError(
-                            "The uploaded CSV file is empty (0 bytes)."
-                        )
-
-                    if len(content) > cls.MAX_FILE_SIZE_BYTES:
-                        raise DatasetValidationError(
-                            "The CSV file exceeds the maximum allowed size of 50 MB."
-                        )
-
-                # Reset file pointer before reading
-                if hasattr(file_source, "seek"):
-                    file_source.seek(0)
+                if (
+                    hasattr(file_source, "size")
+                    and file_source.size > cls.MAX_FILE_SIZE_BYTES
+                ):
+                    raise DatasetValidationError(
+                        "The CSV file exceeds the maximum size limit of 50 MB."
+                    )
 
                 df = pd.read_csv(file_source)
 
@@ -101,17 +82,18 @@ class DatasetService:
 
         except DatasetValidationError:
             raise
-
         except pd.errors.EmptyDataError:
             raise DatasetValidationError(
-                "The CSV file is empty (has no content or headers)."
+                "The CSV file is empty or has no headers."
             )
-
         except pd.errors.ParserError as e:
             raise DatasetValidationError(
                 f"Malformed CSV structure: {str(e)}"
             )
-
+        except UnicodeDecodeError:
+            raise DatasetValidationError(
+                "Unable to read the CSV encoding. Please use UTF-8."
+            )
         except Exception as e:
             raise DatasetValidationError(
                 f"Unable to parse CSV file: {str(e)}"
@@ -122,81 +104,48 @@ class DatasetService:
     @classmethod
     def validate_dataset(cls, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Validates dataset structure, headers, and usable data.
-
-        Ensures the DataFrame contains:
-        - At least two columns.
-        - At least one usable row.
-        - Valid and unique column names.
-        - At least one usable value in every column.
-
-        Individual missing values are preserved for preprocessing.
+        Validate dataset structure, headers, and usable data.
         """
-
         if df is None or not isinstance(df, pd.DataFrame):
             raise DatasetValidationError(
                 "Invalid DataFrame object."
             )
 
-        # Check minimum number of columns
         if len(df.columns) < 2:
             raise DatasetValidationError(
-                f"The dataset must have at least 2 columns "
-                f"(features and target), found {len(df.columns)}."
+                "The dataset must have at least 2 columns "
+                "(features and target)."
             )
 
-        # Check minimum number of rows
-        if df.empty or len(df) == 0:
+        if df.empty:
             raise DatasetValidationError(
                 "The dataset contains 0 rows."
             )
 
-        # Normalize column names
         df = df.copy()
-        df.columns = [
-            str(column).strip()
-            for column in df.columns
-        ]
+        df.columns = [str(column).strip() for column in df.columns]
 
-        # Reject blank column names
         if any(not column for column in df.columns):
             raise DatasetValidationError(
                 "Some column names are blank. "
                 "Please provide valid column names."
             )
 
-        # Reject datasets with only unnamed placeholder headers
-        unnamed_cols = [
-            column
-            for column in df.columns
-            if column.startswith("Unnamed:")
-        ]
-
-        if len(unnamed_cols) == len(df.columns):
-            raise DatasetValidationError(
-                "The CSV appears to lack valid header names."
-            )
-
-        # Reject duplicate column names
         if not df.columns.is_unique:
             raise DatasetValidationError(
                 "Column names must be unique. "
                 "Please remove duplicate headers."
             )
 
-        # Reject datasets with no usable data
         if df.dropna(how="all").empty:
             raise DatasetValidationError(
                 "The dataset contains no usable data."
             )
 
-        # Remove completely empty rows
         df = df.dropna(how="all").reset_index(drop=True)
 
-        # Reject columns containing only missing values
         empty_columns = [
-            column
-            for column in df.columns
+            column for column in df.columns
             if df[column].isna().all()
         ]
 
@@ -205,32 +154,36 @@ class DatasetService:
                 f"These columns contain no usable values: {empty_columns}"
             )
 
-        # Preserve individual missing values for preprocessing
         return df
 
     @classmethod
     def get_dataset_profile(cls, df: pd.DataFrame) -> Dict[str, Any]:
         """
-        Calculates basic profiling information: dimensions, columns,
-        data types, missing values, and descriptive statistics.
+        Calculate dataset dimensions, column details, data types,
+        missing values, and basic profiling information.
         """
-
         if df is None or not isinstance(df, pd.DataFrame):
             raise DatasetValidationError(
-                "Cannot profile a null or invalid DataFrame."
+                "Cannot profile an invalid DataFrame."
+            )
+
+        if len(df) == 0:
+            raise DatasetValidationError(
+                "Cannot profile an empty dataset."
             )
 
         columns_info = []
 
         for col in df.columns:
+            missing_count = int(df[col].isnull().sum())
+
             columns_info.append({
                 "name": str(col),
                 "dtype": str(df[col].dtype),
                 "non_null_count": int(df[col].count()),
-                "missing_count": int(df[col].isnull().sum()),
-                "missing_pct": (
-                    float((df[col].isnull().sum() / len(df)) * 100)
-                    if len(df) > 0 else 0.0
+                "missing_count": missing_count,
+                "missing_pct": float(
+                    (missing_count / len(df)) * 100
                 ),
                 "unique_count": int(df[col].nunique()),
             })
@@ -248,11 +201,15 @@ class DatasetService:
             ),
             "numeric_columns": [
                 str(c)
-                for c in df.select_dtypes(include=["number"]).columns
+                for c in df.select_dtypes(
+                    include=["number"]
+                ).columns
             ],
             "categorical_columns": [
                 str(c)
-                for c in df.select_dtypes(exclude=["number"]).columns
+                for c in df.select_dtypes(
+                    exclude=["number"]
+                ).columns
             ],
         }
 
@@ -264,36 +221,49 @@ class DatasetService:
         feature_columns: List[str],
     ) -> Tuple[List[str], str]:
         """
-        Validates target variable and selected features.
-        Ensures target column exists, is not in features,
-        and the feature selection is valid.
+        Validate the selected target and feature columns.
+
+        Checks:
+        - Dataset is a valid DataFrame.
+        - Target column is selected and exists.
+        - At least one feature is selected.
+        - Every selected feature exists.
+        - Duplicate feature selections are rejected.
+        - Target cannot also be an input feature.
         """
 
         if df is None or not isinstance(df, pd.DataFrame):
             raise DatasetValidationError(
-                "Invalid DataFrame object."
+                "Invalid dataset. Please upload a valid dataset."
+            )
+
+        if df.empty:
+            raise DatasetValidationError(
+                "Cannot select features from an empty dataset."
+            )
+
+        if not isinstance(target_column, str) or not target_column.strip():
+            raise DatasetValidationError(
+                "Please select a target variable."
             )
 
         if target_column not in df.columns:
             raise DatasetValidationError(
                 f"Target column '{target_column}' "
-                "does not exist in dataset."
+                "does not exist in the dataset."
             )
 
-        if not feature_columns:
+        if not isinstance(feature_columns, list) or not feature_columns:
             raise DatasetValidationError(
-                "At least one feature column must be selected."
+                "Please select at least one feature column."
             )
 
-        if target_column in feature_columns:
+        if any(
+            not isinstance(col, str) or not col.strip()
+            for col in feature_columns
+        ):
             raise DatasetValidationError(
-                "Target column cannot also be selected "
-                "as an input feature."
-            )
-
-        if len(feature_columns) != len(set(feature_columns)):
-            raise DatasetValidationError(
-                "Duplicate feature columns are not allowed."
+                "Feature selections must contain valid column names."
             )
 
         missing_features = [
@@ -303,8 +273,18 @@ class DatasetService:
 
         if missing_features:
             raise DatasetValidationError(
-                f"Selected feature columns not found in dataset: "
-                f"{missing_features}"
+                f"Selected feature columns not found: {missing_features}"
             )
 
-        return feature_columns, target_column
+        if len(feature_columns) != len(set(feature_columns)):
+            raise DatasetValidationError(
+                "Duplicate feature columns are not allowed."
+            )
+
+        if target_column in feature_columns:
+            raise DatasetValidationError(
+                "The target column cannot also be selected "
+                "as an input feature."
+            )
+
+        return feature_columns.copy(), target_column
