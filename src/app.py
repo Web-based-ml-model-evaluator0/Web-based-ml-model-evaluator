@@ -2,7 +2,8 @@
 """
 Web-Based ML Model Evaluator - Streamlit Presentation Layer
 
-Modular architecture separating Presentation, Service, and ML layers.
+Refactored into a modular architecture decoupling
+Presentation, Service, and ML layers.
 """
 
 import sys
@@ -18,23 +19,22 @@ root_dir = Path(__file__).resolve().parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
-# Import service layers
 from src.services.dataset_service import (
     DatasetService,
     DatasetValidationError,
 )
+
 from src.services.preprocessing_service import (
     PreprocessingService,
     PreprocessingError,
 )
+
 from src.services.model_service import ModelService
 from src.services.evaluation_service import EvaluationService
 
 
 def main() -> None:
-    # --------------------------------------------------
-    # 1. Page Configuration
-    # --------------------------------------------------
+
     st.set_page_config(
         page_title="Web Based ML Model Evaluator",
         page_icon="📊",
@@ -42,14 +42,16 @@ def main() -> None:
     )
 
     st.title("📊 Web Based ML Model Evaluator")
+
     st.caption(
         "Sprint 1 Baseline: Dataset Upload, Profiling, "
         "Preprocessing, Model Training & Evaluation"
     )
 
     # --------------------------------------------------
-    # 2. Dataset Selection
+    # Section 1: Dataset Selection
     # --------------------------------------------------
+
     st.sidebar.header("📁 1. Dataset Selection")
 
     data_source = st.sidebar.radio(
@@ -69,6 +71,7 @@ def main() -> None:
         )
 
         if sample_path.exists():
+
             try:
                 df = DatasetService.load_csv(sample_path)
 
@@ -88,12 +91,14 @@ def main() -> None:
             )
 
     else:
+
         uploaded_file = st.sidebar.file_uploader(
             "Upload CSV file",
             type=["csv"],
         )
 
         if uploaded_file is not None:
+
             try:
                 df = DatasetService.load_csv(uploaded_file)
 
@@ -116,8 +121,9 @@ def main() -> None:
         return
 
     # --------------------------------------------------
-    # 3. Dataset Preview and Profiling
+    # Section 2: Dataset Preview and Profiling
     # --------------------------------------------------
+
     st.subheader("📋 Dataset Preview and Profiling")
 
     profile = DatasetService.get_dataset_profile(df)
@@ -145,7 +151,10 @@ def main() -> None:
         )
 
     with st.expander("📊 View Column Schema & Data Types"):
-        col_df = pd.DataFrame(profile["column_details"])
+
+        col_df = pd.DataFrame(
+            profile["column_details"]
+        )
 
         st.dataframe(
             col_df,
@@ -155,52 +164,139 @@ def main() -> None:
     st.divider()
 
     # --------------------------------------------------
-    # 4. Feature and Target Selection
+    # Section 3: Feature and Target Selection
+    # ML-F-005 / Issue #41
     # --------------------------------------------------
+
     st.subheader("🎯 Feature and Target Selection")
 
     all_columns = df.columns.tolist()
 
-    default_target_idx = len(all_columns) - 1
+    # Identify default target column
+    default_target = (
+        "diagnosis"
+        if "diagnosis" in all_columns
+        else all_columns[-1]
+    )
 
-    if "diagnosis" in all_columns:
-        default_target_idx = all_columns.index("diagnosis")
+    # Identify the currently loaded dataset.
+    # This helps reset selections when the dataset changes.
+    dataset_signature = (
+        data_source,
+        tuple(all_columns),
+        len(df),
+        tuple(str(dtype) for dtype in df.dtypes),
+        int(pd.util.hash_pandas_object(df, index=True).sum()),
+    )
 
+    if (
+        st.session_state.get("dataset_signature")
+        != dataset_signature
+    ):
+
+        st.session_state["dataset_signature"] = (
+            dataset_signature
+        )
+
+        st.session_state["target_column"] = (
+            default_target
+        )
+
+        st.session_state["feature_columns"] = [
+            col
+            for col in all_columns
+            if col != default_target
+        ]
+
+    # Ensure stored target is valid
+    if (
+        st.session_state.get("target_column")
+        not in all_columns
+    ):
+
+        st.session_state["target_column"] = (
+            default_target
+        )
+
+    # Target selection
     c1, c2 = st.columns([1, 2])
 
     with c1:
+
         target_column = st.selectbox(
             "Select Target Variable (Y):",
-            all_columns,
-            index=default_target_idx,
+            options=all_columns,
+            key="target_column",
+            help=(
+                "Choose the column that the model "
+                "should predict."
+            ),
         )
 
+    # Exclude target from available feature columns
     available_features = [
-        col for col in all_columns
+        col
+        for col in all_columns
         if col != target_column
     ]
 
+    # Remove features that are no longer available
+    # when the target selection changes
+    st.session_state["feature_columns"] = [
+        col
+        for col in st.session_state.get(
+            "feature_columns", []
+        )
+        if col in available_features
+    ]
+
     with c2:
+
         feature_columns = st.multiselect(
             "Select Feature Columns (X):",
-            available_features,
-            default=available_features,
+            options=available_features,
+            key="feature_columns",
+            help=(
+                "Select one or more columns "
+                "to use as model inputs."
+            ),
         )
 
+    st.caption(
+        f"Selected {len(feature_columns)} feature(s) "
+        f"and 1 target variable."
+    )
+
+    # Validate feature and target selections
     try:
-        DatasetService.validate_target_and_features(
-            df,
-            target_column,
-            feature_columns,
+
+        feature_columns, target_column = (
+            DatasetService.validate_target_and_features(
+                df=df,
+                target_column=target_column,
+                feature_columns=feature_columns,
+            )
+        )
+
+        st.success(
+            "Feature and target selections are valid."
         )
 
     except DatasetValidationError as e:
+
         st.error(f"Selection Error: {e}")
+
+        st.info(
+            "Select at least one valid feature column "
+            "and one target variable to continue."
+        )
+
         return
 
     # --------------------------------------------------
-    # 5. Determine Task Type
+    # Determine Task Type
     # --------------------------------------------------
+
     target_series = df[target_column]
 
     if (
@@ -211,10 +307,12 @@ def main() -> None:
             pd.CategoricalDtype,
         )
     ):
+
         is_classification = True
         task_type = "classification"
 
     else:
+
         is_classification = False
         task_type = "regression"
 
@@ -227,13 +325,17 @@ def main() -> None:
     st.divider()
 
     # --------------------------------------------------
-    # 6. Preprocessing and Model Configuration
+    # Section 4: Preprocessing and Model Configuration
     # --------------------------------------------------
-    st.subheader("⚙️ Preprocessing & Model Configuration")
+
+    st.subheader(
+        "⚙️ Preprocessing & Model Configuration"
+    )
 
     cfg_col1, cfg_col2, cfg_col3 = st.columns(3)
 
     with cfg_col1:
+
         test_size_pct = st.slider(
             "Test Set Split Ratio (%)",
             min_value=10,
@@ -245,9 +347,14 @@ def main() -> None:
         test_size = test_size_pct / 100.0
 
     with cfg_col2:
+
         missing_strategy = st.selectbox(
             "Missing Value Imputation:",
-            ["median", "mean", "most_frequent"],
+            [
+                "median",
+                "mean",
+                "most_frequent",
+            ],
         )
 
         scale_features = st.checkbox(
@@ -256,8 +363,11 @@ def main() -> None:
         )
 
     with cfg_col3:
-        supported_models = ModelService.get_supported_models(
-            task_type=task_type
+
+        supported_models = (
+            ModelService.get_supported_models(
+                task_type=task_type
+            )
         )
 
         selected_model_name = st.selectbox(
@@ -265,16 +375,13 @@ def main() -> None:
             supported_models,
         )
 
-    # --------------------------------------------------
-    # 7. Hyperparameter Configuration
-    # --------------------------------------------------
+    # Model Parameters Configuration
     model_info = ModelService.get_model_info(
         selected_model_name
     )
 
     param_schema = model_info.get(
-        "param_schema",
-        {},
+        "param_schema", {}
     )
 
     configured_params = {}
@@ -288,37 +395,51 @@ def main() -> None:
 
             pcols = st.columns(len(param_schema))
 
-            for i, (param_name, schema) in enumerate(
-                param_schema.items()
-            ):
+            for i, (
+                param_name,
+                schema,
+            ) in enumerate(param_schema.items()):
 
                 with pcols[i]:
 
                     if schema["type"] == "int":
 
-                        configured_params[param_name] = st.slider(
-                            param_name,
-                            min_value=schema["min"],
-                            max_value=schema["max"],
-                            value=schema["default"],
+                        configured_params[param_name] = (
+                            st.slider(
+                                param_name,
+                                min_value=schema["min"],
+                                max_value=schema["max"],
+                                value=schema["default"],
+                            )
                         )
 
                     elif schema["type"] == "float":
 
-                        configured_params[param_name] = st.slider(
-                            param_name,
-                            min_value=float(schema["min"]),
-                            max_value=float(schema["max"]),
-                            value=float(schema["default"]),
-                            step=0.1,
+                        configured_params[param_name] = (
+                            st.slider(
+                                param_name,
+                                min_value=float(
+                                    schema["min"]
+                                ),
+                                max_value=float(
+                                    schema["max"]
+                                ),
+                                value=float(
+                                    schema["default"]
+                                ),
+                                step=0.1,
+                            )
                         )
 
     st.divider()
 
     # --------------------------------------------------
-    # 8. Model Training and Evaluation
+    # Section 5: Training and Evaluation
     # --------------------------------------------------
-    st.subheader("🚀 Model Training and Evaluation")
+
+    st.subheader(
+        "🚀 Model Training and Evaluation"
+    )
 
     if st.button(
         "Train and Evaluate Model",
@@ -331,7 +452,8 @@ def main() -> None:
         ):
 
             try:
-                # Step 1: Split Data
+
+                # 1. Split Data
                 X_train, X_test, y_train, y_test = (
                     PreprocessingService.split_data(
                         df=df,
@@ -342,8 +464,8 @@ def main() -> None:
                     )
                 )
 
-                # Step 2: Create Preprocessor
-                # Fit only on training data to prevent data leakage
+                # 2. Build Preprocessor
+                # Fit on training data only to prevent data leakage
                 preprocessor = (
                     PreprocessingService.create_preprocessor(
                         X_train=X_train,
@@ -352,7 +474,6 @@ def main() -> None:
                     )
                 )
 
-                # Step 3: Transform Training and Test Data
                 X_train_proc, X_test_proc = (
                     PreprocessingService.fit_and_transform(
                         preprocessor=preprocessor,
@@ -361,7 +482,7 @@ def main() -> None:
                     )
                 )
 
-                # Step 4: Train Model
+                # 3. Train Model
                 train_result = ModelService.train_model(
                     model_name=selected_model_name,
                     X_train=X_train_proc,
@@ -375,16 +496,16 @@ def main() -> None:
                     "training_time_seconds"
                 ]
 
-                # Step 5: Predict
+                # 4. Predict
                 y_pred = model.predict(X_test_proc)
 
+                # 5. Evaluate
                 st.success(
                     f"Model '{selected_model_name}' "
                     f"trained successfully in "
                     f"{training_time:.3f} seconds!"
                 )
 
-                # Step 6: Evaluate Classification
                 if is_classification:
 
                     eval_results = (
@@ -435,7 +556,6 @@ def main() -> None:
                         use_container_width=True,
                     )
 
-                # Step 7: Evaluate Regression
                 else:
 
                     eval_results = (
@@ -467,7 +587,7 @@ def main() -> None:
                         f"{eval_results['r2_score']:.4f}",
                     )
 
-                # Step 8: Display Sample Predictions
+                # Display Predictions
                 st.markdown(
                     "#### Sample Predictions vs Actual Values"
                 )
@@ -482,7 +602,6 @@ def main() -> None:
                     use_container_width=True,
                 )
 
-            # Specific application errors
             except (
                 PreprocessingError,
                 DatasetValidationError,
@@ -498,13 +617,13 @@ def main() -> None:
                     "then try again."
                 )
 
-            # Unexpected errors
             except Exception as e:
 
                 st.error(
-                    "Model evaluation failed unexpectedly. "
-                    f"Error details: {e}"
+                    "Model evaluation failed unexpectedly."
                 )
+
+                st.exception(e)
 
 
 if __name__ == "__main__":
