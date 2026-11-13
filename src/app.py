@@ -31,7 +31,54 @@ from src.services.preprocessing_service import (
 
 from src.services.model_service import ModelService
 from src.services.evaluation_service import EvaluationService
+from src.services.auth_service import (
+    initialize_database,
+    authenticate_user,
+)
 
+def require_login() -> None:
+    """Display login form and protect the application."""
+
+    initialize_database()
+
+    if not st.session_state.get("authenticated_user"):
+
+        st.title("Login")
+        st.write("Please log in to access the ML Model Evaluator.")
+
+        with st.form("login_form"):
+            identifier = st.text_input("Username or Email")
+            password = st.text_input(
+                "Password",
+                type="password"
+            )
+
+            submitted = st.form_submit_button(
+                "Login",
+                use_container_width=True
+            )
+
+        if submitted:
+            if not identifier.strip() or not password:
+                st.error("Please enter both username/email and password.")
+            else:
+                user = authenticate_user(identifier, password)
+
+                if user:
+                    st.session_state.authenticated_user = user
+                    st.rerun()
+                else:
+                    st.error("Invalid username/email or password.")
+
+        st.stop()
+
+    user = st.session_state.authenticated_user
+
+    st.sidebar.success(f"Logged in as {user['username']}")
+
+    if st.sidebar.button("Logout", use_container_width=True):
+        del st.session_state["authenticated_user"]
+        st.rerun()
 
 def main() -> None:
 
@@ -40,7 +87,7 @@ def main() -> None:
         page_icon="📊",
         layout="wide",
     )
-
+    require_login()
     st.title("📊 Web Based ML Model Evaluator")
 
     st.caption(
