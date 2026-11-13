@@ -31,6 +31,71 @@ from src.services.preprocessing_service import (
 
 from src.services.model_service import ModelService
 from src.services.evaluation_service import EvaluationService
+from src.services.authentication_service import AuthenticationService
+from src.services.authorization_service import AuthorizationService
+from src.services.auth_service import AuthService
+from src.services.audit_service import AuditService
+
+
+def initialize_authentication():
+    """Initialize authentication for development."""
+    if "auth_service" not in st.session_state:
+        users = {
+            "admin": {
+                "password_hash": AuthService.hash_password("Admin@123"),
+                "role": "admin",
+            },
+            "student": {
+                "password_hash": AuthService.hash_password("Student@123"),
+                "role": "user",
+            },
+        }
+
+        st.session_state.auth_service = AuthenticationService(users)
+    if "audit_service" not in st.session_state:
+        st.session_state.audit_service = AuditService()
+
+def login_screen():
+    """Display login form."""
+    st.title("ML Model Evaluator - Login")
+
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Login")
+
+        if submitted:
+            user = st.session_state.auth_service.authenticate(
+                username, password
+            )
+
+            if user:
+                st.session_state.current_user = user
+                st.session_state.audit_service.log_event(
+                    event_type="LOGIN_SUCCESS",
+                    username=user["username"],
+                    details={"role": user["role"]},
+                )
+                st.rerun()
+            else:
+                st.session_state.audit_service.log_event(
+                    event_type="LOGIN_FAILURE",
+                    username=username.strip() if username else None,
+                )
+                st.error("Invalid username or password.")
+
+
+def check_access():
+    """Require login before accessing the application."""
+    initialize_authentication()
+
+    if "current_user" not in st.session_state:
+        login_screen()
+        st.stop()
+
+    AuthorizationService.require_authenticated(
+        st.session_state.current_user
+    )
 
 
 def main() -> None:
@@ -40,6 +105,21 @@ def main() -> None:
         page_icon="📊",
         layout="wide",
     )
+
+    check_access()
+    user = st.session_state.current_user
+
+    st.sidebar.success(
+        f"Logged in: {user['username']} ({user['role']})"
+    )
+
+    if st.sidebar.button("Logout"):
+        st.session_state.audit_service.log_event(
+            event_type="LOGOUT",
+            username=user["username"],
+        )
+        del st.session_state.current_user
+        st.rerun()
 
     st.title("📊 Web Based ML Model Evaluator")
 
@@ -101,7 +181,15 @@ def main() -> None:
 
             try:
                 df = DatasetService.load_csv(uploaded_file)
-
+                st.session_state.audit_service.log_event(
+                    event_type="DATASET_UPLOAD_SUCCESS",
+                    username=user["username"],
+                    details={
+                        "filename": uploaded_file.name,
+                        "rows": len(df),
+                        "columns": len(df.columns),
+                    },
+                )
                 st.sidebar.success(
                     f"Uploaded: {uploaded_file.name} "
                     f"({len(df)} rows, {len(df.columns)} columns)"
@@ -488,6 +576,17 @@ def main() -> None:
                     X_train=X_train_proc,
                     y_train=y_train,
                     params=configured_params,
+                )
+                st.session_state.audit_service.log_event(
+                    event_type="MODEL_TRAINING_SUCCESS",
+                    username=user["username"],
+                    details={
+                        "model": selected_model_name,
+                        "task_type" : task_type,
+                        "training_time_seconds": train_result[
+                            "training_time_seconds"
+                        ],
+                    },
                 )
 
                 model = train_result["model"]
