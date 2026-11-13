@@ -31,6 +31,60 @@ from src.services.preprocessing_service import (
 
 from src.services.model_service import ModelService
 from src.services.evaluation_service import EvaluationService
+from src.services.authentication_service import AuthenticationService
+from src.services.authorization_service import AuthorizationService
+from src.services.auth_service import AuthService
+
+
+def initialize_authentication():
+    """Initialize authentication for development."""
+    if "auth_service" not in st.session_state:
+        users = {
+            "admin": {
+                "password_hash": AuthService.hash_password("Admin@123"),
+                "role": "admin",
+            },
+            "student": {
+                "password_hash": AuthService.hash_password("Student@123"),
+                "role": "user",
+            },
+        }
+
+        st.session_state.auth_service = AuthenticationService(users)
+
+
+def login_screen():
+    """Display login form."""
+    st.title("ML Model Evaluator - Login")
+
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Login")
+
+        if submitted:
+            user = st.session_state.auth_service.authenticate(
+                username, password
+            )
+
+            if user:
+                st.session_state.current_user = user
+                st.rerun()
+            else:
+                st.error("Invalid username or password.")
+
+
+def check_access():
+    """Require login before accessing the application."""
+    initialize_authentication()
+
+    if "current_user" not in st.session_state:
+        login_screen()
+        st.stop()
+
+    AuthorizationService.require_authenticated(
+        st.session_state.current_user
+    )
 
 
 def main() -> None:
@@ -40,6 +94,17 @@ def main() -> None:
         page_icon="📊",
         layout="wide",
     )
+
+    check_access()
+    user = st.session_state.current_user
+
+    st.sidebar.success(
+        f"Logged in: {user['username']} ({user['role']})"
+    )
+
+    if st.sidebar.button("Logout"):
+        del st.session_state.current_user
+        st.rerun()
 
     st.title("📊 Web Based ML Model Evaluator")
 
