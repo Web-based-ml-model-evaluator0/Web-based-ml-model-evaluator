@@ -23,7 +23,7 @@ class DatasetService:
 
     MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB limit
 
-    
+
     @classmethod
     def _get_file_size(cls, file_source: Any) -> int:
         """Determine file size for supported file sources."""
@@ -50,12 +50,8 @@ class DatasetService:
     @classmethod
     def load_csv(cls, file_source: Any) -> pd.DataFrame:
         """
-<<<<<<< HEAD
         Loads and validates a CSV dataset from a file path or file-like object.
-=======
-        Loads a CSV dataset from a file path or file-like object.
         Validates basic tabular readability and file size.
->>>>>>> origin/main
         """
         if file_source is None:
             raise DatasetValidationError("No file source provided.")
@@ -69,33 +65,28 @@ class DatasetService:
                         f"File '{path}' does not exist."
                     )
 
-<<<<<<< HEAD
-                if path.suffix.lower() != ".csv":
-                    raise DatasetValidationError(
-                        "Unsupported file type. Please provide a CSV file."
-                    )
-
-                if path.stat().st_size > cls.MAX_FILE_SIZE_BYTES:
-                    raise DatasetValidationError(
-                        "The uploaded file exceeds the 50 MB size limit."
-                    )
-
-                if path.stat().st_size == 0:
-=======
                 if not path.is_file():
                     raise DatasetValidationError(
                         "The provided path is not a file."
                     )
 
+                if path.suffix.lower() != ".csv":
+                    raise DatasetValidationError(
+                        "Unsupported file type. Please provide a CSV file."
+                    )
+
                 file_size = path.stat().st_size
 
+                if file_size > cls.MAX_FILE_SIZE_BYTES:
+                    raise DatasetValidationError(
+                        "The uploaded file exceeds the 50 MB size limit."
+                    )
+
                 if file_size == 0:
->>>>>>> origin/main
                     raise DatasetValidationError(
                         "The uploaded CSV file is empty (0 bytes)."
                     )
 
-<<<<<<< HEAD
                 df = pd.read_csv(path)
 
             elif hasattr(file_source, "read"):
@@ -106,7 +97,6 @@ class DatasetService:
                         "Unsupported file type. Please upload a CSV file."
                     )
 
-                
                 file_size = cls._get_file_size(file_source)
 
                 if file_size > cls.MAX_FILE_SIZE_BYTES:
@@ -119,46 +109,6 @@ class DatasetService:
                         "The uploaded CSV file is empty (0 bytes)."
                     )
 
-=======
-                if file_size > cls.MAX_FILE_SIZE_BYTES:
-                    raise DatasetValidationError(
-                        "The CSV file exceeds the maximum allowed size of 50 MB."
-                    )
-
-                df = pd.read_csv(path)
-
-            elif hasattr(file_source, "read"):
-
-                # File-like object (e.g. Streamlit UploadedFile or BytesIO)
-                if hasattr(file_source, "size"):
-                    if file_source.size == 0:
-                        raise DatasetValidationError(
-                            "The uploaded CSV file is empty (0 bytes)."
-                        )
-
-                    if file_source.size > cls.MAX_FILE_SIZE_BYTES:
-                        raise DatasetValidationError(
-                            "The CSV file exceeds the maximum allowed size of 50 MB."
-                        )
-
-                # Check size when getvalue() is available
-                if hasattr(file_source, "getvalue"):
-                    content = file_source.getvalue()
-
-                    if len(content) == 0:
-                        raise DatasetValidationError(
-                            "The uploaded CSV file is empty (0 bytes)."
-                        )
-
-                    if len(content) > cls.MAX_FILE_SIZE_BYTES:
-                        raise DatasetValidationError(
-                            "The CSV file exceeds the maximum allowed size of 50 MB."
-                        )
-
-                # Reset file pointer before reading
-                if hasattr(file_source, "seek"):
-                    file_source.seek(0)
->>>>>>> origin/main
 
                 df = pd.read_csv(file_source)
 
@@ -174,18 +124,10 @@ class DatasetService:
             raise DatasetValidationError(
                 "The CSV file is empty (has no content or headers)."
             )
-<<<<<<< HEAD
-=======
-
->>>>>>> origin/main
         except pd.errors.ParserError as e:
             raise DatasetValidationError(
                 f"Malformed CSV structure: {str(e)}"
             )
-<<<<<<< HEAD
-=======
-
->>>>>>> origin/main
         except Exception as e:
             raise DatasetValidationError(
                 f"Unable to parse CSV file: {str(e)}"
@@ -193,11 +135,11 @@ class DatasetService:
 
         return cls.validate_dataset(df)
 
-    
+
     @classmethod
     def validate_dataset(cls, df: pd.DataFrame) -> pd.DataFrame:
-<<<<<<< HEAD
-        """Validate dataset structure and column names."""
+
+        """Validate dataset structure, headers, and usable data."""
         if df is None or not isinstance(df, pd.DataFrame):
             raise DatasetValidationError("Invalid DataFrame object.")
 
@@ -208,9 +150,11 @@ class DatasetService:
             raise DatasetValidationError(
                 "The dataset contains no usable data."
             )
+
         if len(df.columns) < 2:
             raise DatasetValidationError(
-                "The dataset must have at least 2 columns (features and target)."
+                f"The dataset must have at least 2 columns "
+                f"(features and target), found {len(df.columns)}."
             )
 
         # Normalize column names before checking them.
@@ -229,30 +173,6 @@ class DatasetService:
         if all(str(column).startswith("Unnamed:") for column in df.columns):
             raise DatasetValidationError(
                 "The CSV appears to lack valid header names."
-=======
-        """
-        Validates dataset structure, headers, and usable data.
-
-        Ensures the DataFrame contains:
-        - At least two columns.
-        - At least one usable row.
-        - Valid and unique column names.
-        - At least one usable value in every column.
-
-        Individual missing values are preserved for preprocessing.
-        """
-
-        if df is None or not isinstance(df, pd.DataFrame):
-            raise DatasetValidationError(
-                "Invalid DataFrame object."
-            )
-
-        # Check minimum number of columns
-        if len(df.columns) < 2:
-            raise DatasetValidationError(
-                f"The dataset must have at least 2 columns "
-                f"(features and target), found {len(df.columns)}."
->>>>>>> origin/main
             )
 
         # Check minimum number of rows
