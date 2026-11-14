@@ -6,6 +6,7 @@ Refactored into a modular architecture decoupling
 Presentation, Service, and ML layers.
 """
 
+import logging
 import sys
 from pathlib import Path
 from typing import Optional
@@ -31,6 +32,8 @@ from src.services.preprocessing_service import (
 
 from src.services.model_service import ModelService
 from src.services.evaluation_service import EvaluationService
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -446,14 +449,18 @@ def main() -> None:
         type="primary",
     ):
 
-        with st.spinner(
-            "Processing data, training model, "
-            "and evaluating performance..."
-        ):
+        with st.status(
+            "Preparing model evaluation...",
+            expanded=True,
+        ) as training_status:
 
             try:
-
                 # 1. Split Data
+                training_status.update(
+                    label="Step 1/5: Splitting dataset...",
+                    state="running",
+                )
+
                 X_train, X_test, y_train, y_test = (
                     PreprocessingService.split_data(
                         df=df,
@@ -464,7 +471,12 @@ def main() -> None:
                     )
                 )
 
-                # 2. Build Preprocessor
+                # 2. Preprocess Features
+                training_status.update(
+                    label="Step 2/5: Preprocessing features...",
+                    state="running",
+                )
+
                 # Fit on training data only to prevent data leakage
                 preprocessor = (
                     PreprocessingService.create_preprocessor(
@@ -483,6 +495,11 @@ def main() -> None:
                 )
 
                 # 3. Train Model
+                training_status.update(
+                    label="Step 3/5: Training model...",
+                    state="running",
+                )
+
                 train_result = ModelService.train_model(
                     model_name=selected_model_name,
                     X_train=X_train_proc,
@@ -491,23 +508,23 @@ def main() -> None:
                 )
 
                 model = train_result["model"]
+                training_time = train_result["training_time_seconds"]
 
-                training_time = train_result[
-                    "training_time_seconds"
-                ]
+                # 4. Generate Predictions
+                training_status.update(
+                    label="Step 4/5: Generating predictions...",
+                    state="running",
+                )
 
-                # 4. Predict
                 y_pred = model.predict(X_test_proc)
 
-                # 5. Evaluate
-                st.success(
-                    f"Model '{selected_model_name}' "
-                    f"trained successfully in "
-                    f"{training_time:.3f} seconds!"
+                # 5. Evaluate Model
+                training_status.update(
+                    label="Step 5/5: Evaluating model...",
+                    state="running",
                 )
 
                 if is_classification:
-
                     eval_results = (
                         EvaluationService.evaluate_classification(
                             y_true=y_test,
@@ -557,7 +574,6 @@ def main() -> None:
                     )
 
                 else:
-
                     eval_results = (
                         EvaluationService.evaluate_regression(
                             y_true=y_test,
@@ -602,13 +618,30 @@ def main() -> None:
                     use_container_width=True,
                 )
 
+                # Mark the workflow complete only after evaluation succeeds.
+                training_status.update(
+                    label="Model training and evaluation completed.",
+                    state="complete",
+                )
+
+                st.success(
+                    f"Model '{selected_model_name}' trained and "
+                    f"evaluated successfully in "
+                    f"{training_time:.3f} seconds."
+                )
+
             except (
                 PreprocessingError,
                 DatasetValidationError,
             ) as e:
 
+                training_status.update(
+                    label="Model evaluation could not be completed.",
+                    state="error",
+                )
+
                 st.error(
-                    f"Unable to evaluate this dataset: {e}"
+                    f"Unable to process this dataset: {e}"
                 )
 
                 st.info(
@@ -617,13 +650,22 @@ def main() -> None:
                     "then try again."
                 )
 
-            except Exception as e:
-
-                st.error(
-                    "Model evaluation failed unexpectedly."
+            except Exception:
+                training_status.update(
+                    label="Model evaluation failed.",
+                    state="error",
                 )
 
-                st.exception(e)
+                logger.exception(
+                    "Unexpected error during model training or evaluation."
+                )
+
+                st.error(
+                    "Something went wrong while training or evaluating "
+                    "the model. Please check your dataset and settings, "
+                    "then try again. If the problem continues, contact "
+                    "the project administrator."
+                )
 
 
 if __name__ == "__main__":
