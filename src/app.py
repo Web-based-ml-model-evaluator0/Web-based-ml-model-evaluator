@@ -122,34 +122,40 @@ def main() -> None:
 
     # --------------------------------------------------
     # Section 2: Dataset Preview and Profiling
+    # ML-F-004 / Issue #39
     # --------------------------------------------------
 
     st.subheader("📋 Dataset Preview and Profiling")
 
     profile = DatasetService.get_dataset_profile(df)
 
+    # Dataset overview metrics
     col1, col2, col3, col4 = st.columns(4)
 
     col1.metric("Total Rows", profile["num_rows"])
     col2.metric("Total Columns", profile["num_columns"])
+
     col3.metric(
         "Numeric Features",
         len(profile["numeric_columns"]),
     )
+
     col4.metric(
         "Missing Values",
         profile["total_missing_values"],
     )
 
+    # First five rows
     with st.expander(
         "🔍 View First 5 Rows of Dataset",
         expanded=True,
     ):
         st.dataframe(
-            df.head(),
+            df.head(5),
             use_container_width=True,
         )
 
+    # Column names, data types and missing values
     with st.expander("📊 View Column Schema & Data Types"):
 
         col_df = pd.DataFrame(
@@ -160,6 +166,54 @@ def main() -> None:
             col_df,
             use_container_width=True,
         )
+
+    # Descriptive statistics
+    with st.expander("📈 View Descriptive Statistics"):
+
+        numeric_columns = df.select_dtypes(
+            include=["number"]
+        ).columns.tolist()
+
+        categorical_columns = df.select_dtypes(
+            exclude=["number"]
+        ).columns.tolist()
+
+        if numeric_columns:
+            st.markdown("#### Numerical Column Statistics")
+
+            numeric_stats = (
+                df[numeric_columns]
+                .describe()
+                .T
+                .reset_index()
+                .rename(columns={"index": "Column"})
+            )
+
+            st.dataframe(
+                numeric_stats,
+                use_container_width=True,
+            )
+        else:
+            st.info(
+                "No numerical columns are available "
+                "for descriptive statistics."
+            )
+
+        if categorical_columns:
+            st.markdown("#### Categorical Column Statistics")
+
+            categorical_stats = (
+                df[categorical_columns]
+                .describe()
+                .T
+                .reset_index()
+                .rename(columns={"index": "Column"})
+            )
+
+            st.dataframe(
+                categorical_stats,
+                use_container_width=True,
+            )
 
     st.divider()
 
@@ -180,7 +234,7 @@ def main() -> None:
     )
 
     # Identify the currently loaded dataset.
-    # This helps reset selections when the dataset changes.
+    # Reset selections when the dataset changes.
     dataset_signature = (
         data_source,
         tuple(all_columns),
