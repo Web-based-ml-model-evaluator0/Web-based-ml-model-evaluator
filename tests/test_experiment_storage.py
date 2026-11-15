@@ -8,8 +8,12 @@ import unittest
 from pathlib import Path
 import tempfile
 import shutil
+import pytest
 
-from src.services.experiment_service import ExperimentStorageService
+from src.services.experiment_service import (
+    ExperimentStorageService,
+    ExperimentIntegrityError,
+)
 
 
 class TestExperimentStorage(unittest.TestCase):
@@ -209,6 +213,96 @@ def test_stored_configuration_and_metrics_are_unchanged(tmp_path):
     assert retrieved["config"] == config
     assert retrieved["metrics"] == metrics
 
+
+def test_config_hash_tampering_is_detected(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXPERIMENT_INTEGRITY_KEY", "test-secret")
+    service = ExperimentStorageService(tmp_path / "test.db")
+
+    experiment_id = service.save_experiment(
+        {"model_name": "TestModel"},
+        {"accuracy": 0.95},
+    )
+
+    with service._get_connection() as conn:
+        conn.execute(
+            "UPDATE experiments SET config_hash = ? WHERE experiment_id = ?",
+            ("invalid-hash", experiment_id),
+        )
+
+    with pytest.raises(ExperimentIntegrityError):
+        service.get_experiment(experiment_id)
+
+
+def test_metrics_hash_tampering_is_detected(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXPERIMENT_INTEGRITY_KEY", "test-secret")
+    service = ExperimentStorageService(tmp_path / "test.db")
+
+    experiment_id = service.save_experiment(
+        {"model_name": "TestModel"},
+        {"accuracy": 0.95},
+    )
+
+    with service._get_connection() as conn:
+        conn.execute(
+            "UPDATE experiments SET metrics_hash = ? WHERE experiment_id = ?",
+            ("invalid-hash", experiment_id),
+        )
+
+    with pytest.raises(ExperimentIntegrityError):
+        service.get_experiment(experiment_id)
+
+
+def test_legacy_experiment_is_unverified(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXPERIMENT_INTEGRITY_KEY", "test-secret")
+    service = ExperimentStorageService(tmp_path / "test.db")
+
+    experiment_id = service.save_experiment(
+        {"model_name": "TestModel"},
+        {"accuracy": 0.95},
+    )
+
+    with service._get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE experiments
+            SET config_hash = NULL, metrics_hash = NULL
+            WHERE experiment_id = ?
+            """,
+            (experiment_id,),
+        )
+
+    experiment = service.get_experiment(experiment_id)
+
+    assert experiment is not None
+    assert experiment["integrity_status"] == "UNVERIFIED"
+
+
+def test_legacy_experiment_data_remains_retrievable(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("EXPERIMENT_INTEGRITY_KEY", "test-secret")
+    service = ExperimentStorageService(tmp_path / "test.db")
+
+    config = {"model_name": "TestModel"}
+    metrics = {"accuracy": 0.95}
+
+    experiment_id = service.save_experiment(config, metrics)
+
+    with service._get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE experiments
+            SET config_hash = NULL, metrics_hash = NULL
+            WHERE experiment_id = ?
+            """,
+            (experiment_id,),
+        )
+
+    experiment = service.get_experiment(experiment_id)
+
+    assert experiment["config"] == config
+    assert experiment["metrics"] == metrics
+    assert experiment["integrity_status"] == "UNVERIFIED"
 
 
 if __name__ == "__main__":

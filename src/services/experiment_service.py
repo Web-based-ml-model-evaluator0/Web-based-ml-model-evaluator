@@ -12,6 +12,8 @@ import json
 import uuid
 import datetime
 import hashlib
+import hmac
+import os
 
 
 class ExperimentIntegrityError(Exception):
@@ -57,8 +59,21 @@ class ExperimentStorageService:
 
     @staticmethod
     def _calculate_hash(data: str) -> str:
-        """Calculate SHA-256 hash of serialized experiment data."""
-        return hashlib.sha256(data.encode("utf-8")).hexdigest()
+        """Calculate HMAC-SHA256 using an external secret key."""
+
+        secret = os.getenv("EXPERIMENT_INTEGRITY_KEY")
+
+        if not secret:
+            raise RuntimeError(
+                "EXPERIMENT_INTEGRITY_KEY environment variable "
+                "is not configured."
+            )
+
+        return hmac.new(
+            secret.encode("utf-8"),
+            data.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
 
     def _init_db(self) -> None:
         """Initializes database tables if they do not exist."""
@@ -185,23 +200,34 @@ class ExperimentStorageService:
             config_json = row["config_json"]
             metrics_json = row["metrics_json"]
 
-            # Verify configuration integrity.
-            if row["config_hash"] and (
-                self._calculate_hash(config_json) != row["config_hash"]
-            ):
-                raise ExperimentIntegrityError(
-                    f"Configuration integrity check failed for "
-                    f"experiment {experiment_id}"
-                )
+            config_hash = row["config_hash"]
+            metrics_hash = row["metrics_hash"]
 
-            # Verify evaluation result integrity.
-            if row["metrics_hash"] and (
-                self._calculate_hash(metrics_json) != row["metrics_hash"]
-            ):
-                raise ExperimentIntegrityError(
-                    f"Metrics integrity check failed for "
-                    f"experiment {experiment_id}"
-                )
+            # Explicitly handle experiments created before integrity hashes.
+            if not config_hash or not metrics_hash:
+                integrity_status = "UNVERIFIED"
+            else:
+                # Verify configuration integrity.
+                if not hmac.compare_digest(
+                    self._calculate_hash(config_json),
+                    config_hash,
+                ):
+                    raise ExperimentIntegrityError(
+                        f"Configuration integrity check failed for "
+                        f"experiment {experiment_id}"
+                    )
+
+                # Verify evaluation result integrity.
+                if not hmac.compare_digest(
+                    self._calculate_hash(metrics_json),
+                    metrics_hash,
+                ):
+                    raise ExperimentIntegrityError(
+                        f"Metrics integrity check failed for "
+                        f"experiment {experiment_id}"
+                    )
+
+                integrity_status = "VERIFIED"
 
             return {
                 "experiment_id": row["experiment_id"],
@@ -215,6 +241,7 @@ class ExperimentStorageService:
                 "config": json.loads(config_json),
                 "metrics": json.loads(metrics_json),
                 "status": row["status"],
+                "integrity_status": integrity_status,
             }
 
     def list_experiments(self, limit: int = 50) -> List[Dict[str, Any]]:
@@ -251,6 +278,7 @@ class ExperimentStorageService:
                     "training_time_seconds"
                 ],
                 "status": experiment["status"],
+                "integrity_status": experiment["integrity_status"],
                 "accuracy": metrics_data.get("accuracy"),
                 "f1_score": metrics_data.get("f1_score"),
                 "r2_score": metrics_data.get("r2_score"),
