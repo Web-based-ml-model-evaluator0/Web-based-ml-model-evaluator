@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 import tempfile
 import shutil
+import os
 
 from src.services.experiment_service import ExperimentStorageService
 
@@ -12,6 +13,7 @@ from src.services.experiment_service import ExperimentStorageService
 class TestExperimentAccessControl(unittest.TestCase):
 
     def setUp(self):
+        os.environ["EXPERIMENT_INTEGRITY_KEY"] = "test-secret-key"
         self.temp_dir = tempfile.mkdtemp()
         self.db_path = Path(self.temp_dir) / "test_access.db"
         self.storage = ExperimentStorageService(db_path=self.db_path)
