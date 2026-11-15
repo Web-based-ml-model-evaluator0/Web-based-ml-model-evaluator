@@ -1,3 +1,4 @@
+
 """
 Model Service module (ML-NF-008, ML-F-008, ML-F-009, ML-F-010).
 Provides a pluggable model registry and training orchestration that allows new
@@ -19,6 +20,7 @@ class ModelService:
     """
 
     _registry: Dict[str, Dict[str, Any]] = {}
+    _availability: Dict[str, bool] = {}
 
     @classmethod
     def register_model(
@@ -29,10 +31,7 @@ class ModelService:
         default_params: Optional[Dict[str, Any]] = None,
         param_schema: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """
-        Registers a new machine learning algorithm into the system dynamically.
-        Enables adding new models without modifying the rest of the application.
-        """
+        """Register a new machine learning algorithm dynamically."""
         cls._registry[model_name] = {
             "task_type": task_type,
             "factory": factory,
@@ -40,40 +39,100 @@ class ModelService:
             "param_schema": param_schema or {},
         }
 
+        # Newly registered models are enabled by default.
+        cls._availability.setdefault(model_name, True)
+
     @classmethod
-    def get_supported_models(cls, task_type: Optional[str] = None) -> List[str]:
-        """
-        Returns the list of available model names, optionally filtered by task type.
-        """
+    def set_model_availability(
+        cls, model_name: str, enabled: bool
+    ) -> None:
+        """Enable or disable a registered model."""
+        if model_name not in cls._registry:
+            raise ValueError(
+                f"Model '{model_name}' is not registered."
+            )
+
+        if not isinstance(enabled, bool):
+            raise TypeError("enabled must be a boolean.")
+
+        cls._availability[model_name] = enabled
+
+    @classmethod
+    def get_model_availability(cls) -> Dict[str, bool]:
+        """Return availability status for all registered models."""
+        if not cls._registry:
+            cls._initialize_defaults()
+
+        return {
+            name: cls._availability.get(name, True)
+            for name in cls._registry
+        }
+
+    @classmethod
+    def is_model_available(cls, model_name: str) -> bool:
+        """Check whether a registered model is enabled."""
+        if not cls._registry:
+            cls._initialize_defaults()
+
+        if model_name not in cls._registry:
+            return False
+
+        return cls._availability.get(model_name, True)
+
+    @classmethod
+    def get_supported_models(
+        cls, task_type: Optional[str] = None
+    ) -> List[str]:
+        """Return enabled model names, optionally filtered by task type."""
         if not cls._registry:
             cls._initialize_defaults()
 
         if task_type:
             return [
-                name for name, info in cls._registry.items()
+                name
+                for name, info in cls._registry.items()
                 if info["task_type"].lower() == task_type.lower()
+                and cls.is_model_available(name)
             ]
-        return list(cls._registry.keys())
+
+        return [
+            name
+            for name in cls._registry
+            if cls.is_model_available(name)
+        ]
 
     @classmethod
     def get_model_info(cls, model_name: str) -> Dict[str, Any]:
-        """
-        Returns metadata and default parameters for a given model.
-        """
+        """Return metadata and default parameters for a model."""
         if not cls._registry:
             cls._initialize_defaults()
 
         if model_name not in cls._registry:
-            raise ValueError(f"Model '{model_name}' is not registered in the system.")
+            raise ValueError(
+                f"Model '{model_name}' is not registered in the system."
+            )
+
         return cls._registry[model_name]
 
     @classmethod
-    def create_model_instance(cls, model_name: str, params: Optional[Dict[str, Any]] = None) -> BaseEstimator:
-        """
-        Instantiates a scikit-learn model with the provided parameters.
-        """
+    def create_model_instance(
+        cls,
+        model_name: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> BaseEstimator:
+        """Instantiate an enabled model with provided parameters."""
         info = cls.get_model_info(model_name)
-        combined_params = {**info["default_params"], **(params or {})}
+
+        if not cls.is_model_available(model_name):
+            raise ValueError(
+                f"Model '{model_name}' is currently disabled."
+            )
+
+        combined_params = {
+            **info["default_params"],
+            **(params or {}),
+        }
+
         return info["factory"](**combined_params)
 
     @classmethod
@@ -84,10 +143,9 @@ class ModelService:
         y_train: Any,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """
-        Trains the specified model on training data and records execution metrics.
-        """
+        """Train the specified enabled model and record execution metrics."""
         model = cls.create_model_instance(model_name, params)
+
         start_time = time.time()
         model.fit(X_train, y_train)
         training_time = time.time() - start_time
@@ -101,33 +159,58 @@ class ModelService:
 
     @classmethod
     def _initialize_defaults(cls) -> None:
-        """
-        Initializes baseline models supported out-of-the-box in Sprint 1.
-        """
+        """Initialize baseline models supported out-of-the-box in Sprint 1."""
+
         # Classification models
         cls.register_model(
             model_name="Logistic Regression",
             task_type="classification",
             factory=LogisticRegression,
             default_params={"max_iter": 1000, "random_state": 42},
-            param_schema={"C": {"type": "float", "default": 1.0, "min": 0.01, "max": 100.0}},
+            param_schema={
+                "C": {
+                    "type": "float",
+                    "default": 1.0,
+                    "min": 0.01,
+                    "max": 100.0,
+                }
+            },
         )
+
         cls.register_model(
             model_name="Random Forest Classifier",
             task_type="classification",
             factory=RandomForestClassifier,
             default_params={"n_estimators": 100, "random_state": 42},
             param_schema={
-                "n_estimators": {"type": "int", "default": 100, "min": 10, "max": 500},
-                "max_depth": {"type": "int", "default": 10, "min": 1, "max": 50},
+                "n_estimators": {
+                    "type": "int",
+                    "default": 100,
+                    "min": 10,
+                    "max": 500,
+                },
+                "max_depth": {
+                    "type": "int",
+                    "default": 10,
+                    "min": 1,
+                    "max": 50,
+                },
             },
         )
+
         cls.register_model(
             model_name="Decision Tree Classifier",
             task_type="classification",
             factory=DecisionTreeClassifier,
             default_params={"random_state": 42},
-            param_schema={"max_depth": {"type": "int", "default": 5, "min": 1, "max": 30}},
+            param_schema={
+                "max_depth": {
+                    "type": "int",
+                    "default": 5,
+                    "min": 1,
+                    "max": 30,
+                }
+            },
         )
 
         # Regression models
@@ -138,22 +221,41 @@ class ModelService:
             default_params={},
             param_schema={},
         )
+
         cls.register_model(
             model_name="Random Forest Regressor",
             task_type="regression",
             factory=RandomForestRegressor,
             default_params={"n_estimators": 100, "random_state": 42},
             param_schema={
-                "n_estimators": {"type": "int", "default": 100, "min": 10, "max": 500},
-                "max_depth": {"type": "int", "default": 10, "min": 1, "max": 50},
+                "n_estimators": {
+                    "type": "int",
+                    "default": 100,
+                    "min": 10,
+                    "max": 500,
+                },
+                "max_depth": {
+                    "type": "int",
+                    "default": 10,
+                    "min": 1,
+                    "max": 50,
+                },
             },
         )
+
         cls.register_model(
             model_name="Decision Tree Regressor",
             task_type="regression",
             factory=DecisionTreeRegressor,
             default_params={"random_state": 42},
-            param_schema={"max_depth": {"type": "int", "default": 5, "min": 1, "max": 30}},
+            param_schema={
+                "max_depth": {
+                    "type": "int",
+                    "default": 5,
+                    "min": 1,
+                    "max": 30,
+                }
+            },
         )
 
 
