@@ -19,6 +19,8 @@ from src.services.experiment_service import (
 class TestExperimentStorage(unittest.TestCase):
     def setUp(self):
         # Create a temporary directory for isolated database testing
+        import os
+        os.environ["EXPERIMENT_INTEGRITY_KEY"] = "test-secret-key"
         self.temp_dir = tempfile.mkdtemp()
         self.db_path = Path(self.temp_dir) / "test_experiments.db"
         self.storage = ExperimentStorageService(db_path=self.db_path)
