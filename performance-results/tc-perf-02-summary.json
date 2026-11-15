@@ -1,0 +1,173 @@
+{
+  "requirement_id": "ML-NF-002",
+  "test_case_id": "TC-PERF-02",
+  "started_at_utc": "2026-10-28T05:28:13.885376+00:00",
+  "url": "http://127.0.0.1:8501",
+  "requested_concurrent_users": 20,
+  "successful_requests": 20,
+  "failed_requests": 0,
+  "result": "PASS",
+  "scope_note": "Concurrent HTTP GET smoke test only. It does not simulate browser sessions, authenticated workflows, or model-training workloads.",
+  "requests": [
+    {
+      "worker": 1,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 116.967,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 2,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 111.797,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 3,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 114.395,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 4,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 116.769,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 5,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 116.745,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 6,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 108.344,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 7,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 36.804,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 8,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 23.066,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 9,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 28.977,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 10,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 34.213,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 11,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 37.573,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 12,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 23.323,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 13,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 35.572,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 14,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 36.717,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 15,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 34.861,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 16,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 37.438,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 17,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 38.901,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 18,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 36.759,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 19,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 37.744,
+      "success": true,
+      "error": ""
+    },
+    {
+      "worker": 20,
+      "url": "http://127.0.0.1:8501",
+      "status_code": 200,
+      "response_time_ms": 38.656,
+      "success": true,
+      "error": ""
+    }
+  ]
+}
