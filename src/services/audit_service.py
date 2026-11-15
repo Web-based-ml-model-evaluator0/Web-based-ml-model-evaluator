@@ -12,6 +12,7 @@ class AuditService:
         self.log_file = Path(log_file)
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
 
+
         # Use a separate logger for each log file.
         logger_name = (
             f"ml_model_evaluator.audit.{self.log_file.resolve()}"
@@ -60,3 +61,21 @@ class AuditService:
         }
 
         self.logger.info(json.dumps(event, default=str))
+
+    def get_events(self):
+        """Read recorded audit events from the log file."""
+
+        events = []
+
+        if not self.log_file.exists():
+            return events
+
+        with self.log_file.open("r", encoding="utf-8") as file:
+            for line in file:
+                try:
+                    events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+
+        return events
+
