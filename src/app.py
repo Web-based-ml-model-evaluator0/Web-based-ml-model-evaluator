@@ -38,6 +38,9 @@ from src.services.authentication_service import AuthenticationService
 from src.services.authorization_service import AuthorizationService
 from src.services.auth_service import AuthService
 from src.services.audit_service import AuditService
+from src.services.comparison_service import ComparisonError, ModelComparisonService
+from src.services.report_service import EvaluationReportService, ReportGenerationError
+from src.services.visualization_service import EvaluationVisualizationService
 
 
 def initialize_authentication():
@@ -630,10 +633,10 @@ def main() -> None:
                     callback=lambda state, pct, ev: status_box.write(f"[{state}] {ev.get('message', '')}")
                 )
                 # 3. Train Model
-
-                training_status.update(
-                    label="Step 3/5: Training model...",
-                    state="running",
+                tracker.update(
+                    TrainingStatus.TRAINING,
+                    0.6,
+                    "Step 3/5: Training model...",
                 )
 
                 train_result = ModelService.train_model(
@@ -727,6 +730,13 @@ def main() -> None:
                         use_container_width=True,
                     )
 
+                    st.markdown("#### Metric Chart")
+                    st.bar_chart(
+                        EvaluationVisualizationService.metric_chart_data(
+                            eval_results
+                        )
+                    )
+
                 else:
 
                     eval_results = (
@@ -758,6 +768,27 @@ def main() -> None:
                         "R² Score",
                         f"{eval_results['r2_score']:.4f}",
                     )
+
+                    st.markdown("#### Metric Chart")
+                    st.bar_chart(
+                        EvaluationVisualizationService.metric_chart_data(
+                            eval_results
+                        )
+                    )
+
+                    st.markdown("#### Actual vs Predicted")
+                    scatter_df = (
+                        EvaluationVisualizationService.regression_scatter_frame(
+                            y_test,
+                            y_pred,
+                        )
+                    )
+                    st.scatter_chart(
+                        scatter_df,
+                        x="Actual",
+                        y="Predicted",
+                    )
+
                 # Log successful evaluation
                 st.session_state.audit_service.log_event(
                     event_type="MODEL_EVALUATION_SUCCESS",
@@ -796,15 +827,66 @@ def main() -> None:
                     "parameters": configured_params,
                     "training_time_seconds": training_time,
                 }
-                exp_id = storage.save_experiment(config=exp_config, metrics=eval_results)
+                exp_id = storage.save_experiment(
+                    config=exp_config,
+                    metrics=eval_results,
+                    username=user["username"],
+                )
                 st.info(f"💾 Experiment configuration and evaluation results saved: `{exp_id}`")
 
-            # Specific application errors
+                # Step 10: Report generation (ML-F-018)
+                saved_experiment = storage.get_experiment(
+                    exp_id,
+                    username=user["username"],
+                    role=user["role"],
+                )
+                if saved_experiment:
+                    dataset_info = {
+                        "target_column": target_column,
+                        "feature_count": len(feature_columns),
+                        "split_ratio": test_size,
+                        "rows": len(df),
+                        "columns": len(df.columns),
+                    }
+                    try:
+                        html_report = EvaluationReportService.to_html(
+                            saved_experiment,
+                            dataset_info=dataset_info,
+                        )
+                        json_report = EvaluationReportService.to_json(
+                            saved_experiment
+                        )
+                        csv_report = EvaluationReportService.to_csv(
+                            saved_experiment
+                        )
+                        st.markdown("#### 📄 Download Evaluation Report")
+                        report_cols = st.columns(3)
+                        report_cols[0].download_button(
+                            "Download HTML Report",
+                            data=html_report,
+                            file_name=f"{exp_id}_report.html",
+                            mime="text/html",
+                        )
+                        report_cols[1].download_button(
+                            "Download JSON Report",
+                            data=json_report,
+                            file_name=f"{exp_id}_report.json",
+                            mime="application/json",
+                        )
+                        report_cols[2].download_button(
+                            "Download CSV Metrics",
+                            data=csv_report,
+                            file_name=f"{exp_id}_metrics.csv",
+                            mime="text/csv",
+                        )
+                    except ReportGenerationError as report_error:
+                        st.warning(f"Report could not be generated: {report_error}")
 
                 # Mark the workflow complete only after evaluation succeeds.
-                training_status.update(
-                    label="Model training and evaluation completed.",
-                    state="complete",
+                tracker.update(
+                    TrainingStatus.COMPLETED,
+                    1.0,
+                    "Model training and evaluation completed.",
                 )
 
                 st.success(
@@ -841,17 +923,155 @@ def main() -> None:
 
 
 # --------------------------------------------------
-    # 6. Experiment History (ML-F-016)
+    # 6. Experiment History (ML-F-017)
     # --------------------------------------------------
     st.divider()
     st.subheader("📜 Experiment History")
-    storage = ExperimentStorageService()
-    history = storage.list_experiments(limit=10)
+
+    try:
+        storage = ExperimentStorageService()
+        history = storage.list_experiments(
+            limit=20,
+            username=user["username"],
+            role=user["role"],
+        )
+    except RuntimeError as storage_error:
+        history = []
+        st.warning(f"Experiment storage is unavailable: {storage_error}")
+
     if history:
-        with st.expander(f"View Previous Experiment Runs ({len(history)} stored)", expanded=False):
+        with st.expander(
+            f"View Previous Experiment Runs ({len(history)} stored)",
+            expanded=False,
+        ):
             st.dataframe(pd.DataFrame(history), use_container_width=True)
+
+            selected_id = st.selectbox(
+                "Select a run to inspect:",
+                options=[row["experiment_id"] for row in history],
+                key="history_detail_id",
+            )
+
+            if selected_id:
+                detail = storage.get_experiment(
+                    selected_id,
+                    username=user["username"],
+                    role=user["role"],
+                )
+                if detail is None:
+                    st.info("This run is not available to your account.")
+                else:
+                    st.markdown(f"#### Run `{detail['experiment_id']}`")
+                    st.caption(
+                        f"Model: {detail['model_name']} | "
+                        f"Task: {detail['task_type']} | "
+                        f"Status: {detail['status']} | "
+                        f"Integrity: {detail['integrity_status']}"
+                    )
+
+                    detail_cols = st.columns(4)
+                    detail_cols[0].metric(
+                        "Features", detail.get("feature_count") or 0
+                    )
+                    detail_cols[1].metric(
+                        "Test Split",
+                        f"{float(detail.get('split_ratio') or 0):.0%}",
+                    )
+                    detail_cols[2].metric(
+                        "Training Time",
+                        f"{float(detail.get('training_time_seconds') or 0):.3f}s",
+                    )
+                    detail_cols[3].metric(
+                        "Created",
+                        str(detail.get("created_at", ""))[:10],
+                    )
+
+                    with st.expander("Configuration", expanded=False):
+                        st.json(detail.get("config", {}))
+
+                    st.markdown("#### Stored Evaluation Results")
+                    st.dataframe(
+                        EvaluationVisualizationService.metric_table(
+                            detail.get("metrics", {})
+                        ),
+                        use_container_width=True,
+                    )
+
+                    cm_frame = (
+                        EvaluationVisualizationService.confusion_matrix_frame(
+                            detail.get("metrics", {})
+                        )
+                    )
+                    if not cm_frame.empty:
+                        st.markdown("#### Confusion Matrix")
+                        st.dataframe(cm_frame, use_container_width=True)
+
+                    try:
+                        st.download_button(
+                            "Download HTML Report",
+                            data=EvaluationReportService.to_html(detail),
+                            file_name=f"{selected_id}_report.html",
+                            mime="text/html",
+                            key=f"history_report_{selected_id}",
+                        )
+                    except ReportGenerationError as report_error:
+                        st.warning(str(report_error))
     else:
         st.caption("No previous experiments stored yet.")
+
+    # --------------------------------------------------
+    # 7. Model Run Comparison (ML-F-015)
+    # --------------------------------------------------
+    st.divider()
+    st.subheader("🔀 Compare Model Runs")
+
+    if len(history) < 2:
+        st.caption("Store at least two experiment runs to enable comparison.")
+    else:
+        selected_runs = st.multiselect(
+            "Select two or more completed runs to compare:",
+            options=[row["experiment_id"] for row in history],
+            key="comparison_runs",
+        )
+
+        if st.button("Compare Selected Runs"):
+            if len(selected_runs) < 2:
+                st.warning("Select at least two runs to compare.")
+            else:
+                experiments = []
+                for run_id in selected_runs:
+                    experiment = storage.get_experiment(
+                        run_id,
+                        username=user["username"],
+                        role=user["role"],
+                    )
+                    if experiment is not None:
+                        experiments.append(experiment)
+
+                try:
+                    comparison = ModelComparisonService.compare(experiments)
+                    st.dataframe(
+                        pd.DataFrame(comparison["metric_rows"]),
+                        use_container_width=True,
+                    )
+
+                    st.markdown("#### Best Run per Metric")
+                    best_rows = [
+                        {
+                            "Metric": metric,
+                            "Best Experiment": info["experiment_id"],
+                            "Value": info["value"],
+                        }
+                        for metric, info in comparison[
+                            "best_per_metric"
+                        ].items()
+                    ]
+                    st.dataframe(
+                        pd.DataFrame(best_rows),
+                        use_container_width=True,
+                    )
+                except ComparisonError as comparison_error:
+                    st.warning(str(comparison_error))
 
 
 if __name__ == "__main__":
