@@ -1,3 +1,4 @@
+
 """
 Unit test for Issue #16 (ML-F-016 Experiment Storage, TC-HIST-01).
 Tests persistent storage, retrieval, chronological listing, and data integrity
@@ -18,6 +19,7 @@ class TestExperimentStorage(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.db_path = Path(self.temp_dir) / "test_experiments.db"
         self.storage = ExperimentStorageService(db_path=self.db_path)
+        self.username = "test_user"
 
     def tearDown(self):
         # Clean up temporary directory
@@ -43,11 +45,18 @@ class TestExperimentStorage(unittest.TestCase):
             "confusion_matrix": [[70, 2], [2, 40]],
         }
 
-        exp_id = self.storage.save_experiment(config=config, metrics=metrics)
+        exp_id = self.storage.save_experiment(
+            config=config,
+            metrics=metrics,
+            username=self.username,
+        )
         self.assertTrue(exp_id.startswith("EXP-"))
 
         # Retrieve experiment
-        record = self.storage.get_experiment(exp_id)
+        record = self.storage.get_experiment(
+            exp_id,
+            username=self.username,
+        )
         self.assertIsNotNone(record)
         self.assertEqual(record["experiment_id"], exp_id)
         self.assertEqual(record["model_name"], "Logistic Regression")
@@ -72,8 +81,15 @@ class TestExperimentStorage(unittest.TestCase):
             "r2_score": 0.88,
         }
 
-        exp_id = self.storage.save_experiment(config=config, metrics=metrics)
-        record = self.storage.get_experiment(exp_id)
+        exp_id = self.storage.save_experiment(
+            config=config,
+            metrics=metrics,
+            username=self.username,
+        )
+        record = self.storage.get_experiment(
+            exp_id,
+            username=self.username,
+        )
         self.assertIsNotNone(record)
         self.assertEqual(record["task_type"], "regression")
         self.assertAlmostEqual(record["metrics"]["r2_score"], 0.88)
@@ -83,17 +99,23 @@ class TestExperimentStorage(unittest.TestCase):
         id1 = self.storage.save_experiment(
             config={"model_name": "Model 1", "task_type": "classification"},
             metrics={"accuracy": 0.80},
+            username=self.username,
         )
         id2 = self.storage.save_experiment(
             config={"model_name": "Model 2", "task_type": "classification"},
             metrics={"accuracy": 0.85},
+            username=self.username,
         )
         id3 = self.storage.save_experiment(
             config={"model_name": "Model 3", "task_type": "regression"},
             metrics={"r2_score": 0.90},
+            username=self.username,
         )
 
-        history = self.storage.list_experiments(limit=10)
+        history = self.storage.list_experiments(
+            limit=10,
+            username=self.username,
+        )
         self.assertEqual(len(history), 3)
         # Most recent first
         self.assertEqual(history[0]["experiment_id"], id3)
@@ -102,7 +124,10 @@ class TestExperimentStorage(unittest.TestCase):
 
     def test_retrieval_nonexistent_experiment_returns_none(self):
         """TC-HIST-01 Step 5: Querying a nonexistent experiment ID returns None safely."""
-        record = self.storage.get_experiment("NONEXISTENT-ID-999")
+        record = self.storage.get_experiment(
+            "NONEXISTENT-ID-999",
+            username=self.username,
+        )
         self.assertIsNone(record)
 
     def test_delete_experiment(self):
@@ -110,27 +135,44 @@ class TestExperimentStorage(unittest.TestCase):
         exp_id = self.storage.save_experiment(
             config={"model_name": "Model to delete"},
             metrics={"accuracy": 0.5},
+            username=self.username,
         )
         self.assertEqual(self.storage.count_experiments(), 1)
 
-        deleted = self.storage.delete_experiment(exp_id)
+        deleted = self.storage.delete_experiment(
+            exp_id,
+            username=self.username,
+        )
         self.assertTrue(deleted)
         self.assertEqual(self.storage.count_experiments(), 0)
-        self.assertIsNone(self.storage.get_experiment(exp_id))
+        self.assertIsNone(
+            self.storage.get_experiment(
+                exp_id,
+                username=self.username,
+            )
+        )
 
     def test_data_integrity_stored_results_correspond_to_correct_experiment(self):
         """TC-HIST-01 Step 7: Multi-experiment results do not cross-contaminate."""
         exp_a = self.storage.save_experiment(
             config={"model_name": "Alpha", "target_column": "targetA"},
             metrics={"accuracy": 0.91},
+            username=self.username,
         )
         exp_b = self.storage.save_experiment(
             config={"model_name": "Beta", "target_column": "targetB"},
             metrics={"accuracy": 0.72},
+            username=self.username,
         )
 
-        res_a = self.storage.get_experiment(exp_a)
-        res_b = self.storage.get_experiment(exp_b)
+        res_a = self.storage.get_experiment(
+            exp_a,
+            username=self.username,
+        )
+        res_b = self.storage.get_experiment(
+            exp_b,
+            username=self.username,
+        )
 
         self.assertEqual(res_a["model_name"], "Alpha")
         self.assertEqual(res_a["config"]["target_column"], "targetA")
