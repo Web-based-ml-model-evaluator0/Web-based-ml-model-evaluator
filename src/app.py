@@ -6,7 +6,6 @@ Refactored into a modular architecture decoupling
 Presentation, Service, and ML layers.
 """
 
-import logging
 import sys
 from pathlib import Path
 from typing import Optional
@@ -35,6 +34,7 @@ from src.services.evaluation_service import EvaluationService
 from src.services.authentication_service import AuthenticationService
 from src.services.authorization_service import AuthorizationService
 from src.services.auth_service import AuthService
+from src.services.audit_service import AuditService
 
 
 def initialize_authentication():
@@ -52,7 +52,8 @@ def initialize_authentication():
         }
 
         st.session_state.auth_service = AuthenticationService(users)
-
+    if "audit_service" not in st.session_state:
+        st.session_state.audit_service = AuditService()
 
 def login_screen():
     """Display login form."""
@@ -70,8 +71,17 @@ def login_screen():
 
             if user:
                 st.session_state.current_user = user
+                st.session_state.audit_service.log_event(
+                    event_type="LOGIN_SUCCESS",
+                    username=user["username"],
+                    details={"role": user["role"]},
+                )
                 st.rerun()
             else:
+                st.session_state.audit_service.log_event(
+                    event_type="LOGIN_FAILURE",
+                    username=username.strip() if username else None,
+                )
                 st.error("Invalid username or password.")
 
 
@@ -87,7 +97,45 @@ def check_access():
         st.session_state.current_user
     )
 
-logger = logging.getLogger(__name__)
+def admin_dashboard():
+    if not AuthorizationService.has_role(
+        st.session_state.current_user, "admin"
+    ):
+        st.error("Access denied. Admin privileges required.")
+        st.stop()
+
+    st.title("🛠️ Admin Dashboard")
+
+    st.subheader("Model Availability")
+
+    availability = ModelService.get_model_availability()
+
+    for model_name, enabled in availability.items():
+        new_status = st.toggle(
+            model_name,
+            value=enabled,
+            key=f"admin_model_{model_name}"
+        )
+
+        if new_status != enabled:
+            ModelService.set_model_availability(
+                model_name, new_status
+            )
+            st.session_state.audit_service.log_event(
+                event_type="MODEL_AVAILABILITY_CHANGED",
+                username=st.session_state.current_user["username"],
+                details={"model": model_name, "enabled": new_status}
+            )
+            st.rerun()
+
+    st.subheader("📋 Activity Logs")
+
+    events = st.session_state.audit_service.get_events()
+
+    if events:
+        st.dataframe(pd.DataFrame(events), width="stretch")
+    else:
+        st.info("No activity logs available.")
 
 
 def main() -> None:
@@ -106,8 +154,24 @@ def main() -> None:
     )
 
     if st.sidebar.button("Logout"):
+        st.session_state.audit_service.log_event(
+            event_type="LOGOUT",
+            username=user["username"],
+        )
         del st.session_state.current_user
         st.rerun()
+
+    page = "Evaluator"
+    if AuthorizationService.has_role(user, "admin"):
+        page = st.sidebar.radio(
+            "Navigation",
+            ["Evaluator", "Admin Dashboard"],
+            key="app_navigation",
+        )
+
+    if page == "Admin Dashboard":
+        admin_dashboard()
+        return
 
     st.title("📊 Web Based ML Model Evaluator")
 
@@ -169,7 +233,15 @@ def main() -> None:
 
             try:
                 df = DatasetService.load_csv(uploaded_file)
-
+                st.session_state.audit_service.log_event(
+                    event_type="DATASET_UPLOAD_SUCCESS",
+                    username=user["username"],
+                    details={
+                        "filename": uploaded_file.name,
+                        "rows": len(df),
+                        "columns": len(df.columns),
+                    },
+                )
                 st.sidebar.success(
                     f"Uploaded: {uploaded_file.name} "
                     f"({len(df)} rows, {len(df.columns)} columns)"
@@ -190,40 +262,34 @@ def main() -> None:
 
     # --------------------------------------------------
     # Section 2: Dataset Preview and Profiling
-    # ML-F-004 / Issue #39
     # --------------------------------------------------
 
     st.subheader("📋 Dataset Preview and Profiling")
 
     profile = DatasetService.get_dataset_profile(df)
 
-    # Dataset overview metrics
     col1, col2, col3, col4 = st.columns(4)
 
     col1.metric("Total Rows", profile["num_rows"])
     col2.metric("Total Columns", profile["num_columns"])
-
     col3.metric(
         "Numeric Features",
         len(profile["numeric_columns"]),
     )
-
     col4.metric(
         "Missing Values",
         profile["total_missing_values"],
     )
 
-    # First five rows
     with st.expander(
         "🔍 View First 5 Rows of Dataset",
         expanded=True,
     ):
         st.dataframe(
-            df.head(5),
+            df.head(),
             use_container_width=True,
         )
 
-    # Column names, data types and missing values
     with st.expander("📊 View Column Schema & Data Types"):
 
         col_df = pd.DataFrame(
@@ -234,54 +300,6 @@ def main() -> None:
             col_df,
             use_container_width=True,
         )
-
-    # Descriptive statistics
-    with st.expander("📈 View Descriptive Statistics"):
-
-        numeric_columns = df.select_dtypes(
-            include=["number"]
-        ).columns.tolist()
-
-        categorical_columns = df.select_dtypes(
-            exclude=["number"]
-        ).columns.tolist()
-
-        if numeric_columns:
-            st.markdown("#### Numerical Column Statistics")
-
-            numeric_stats = (
-                df[numeric_columns]
-                .describe()
-                .T
-                .reset_index()
-                .rename(columns={"index": "Column"})
-            )
-
-            st.dataframe(
-                numeric_stats,
-                use_container_width=True,
-            )
-        else:
-            st.info(
-                "No numerical columns are available "
-                "for descriptive statistics."
-            )
-
-        if categorical_columns:
-            st.markdown("#### Categorical Column Statistics")
-
-            categorical_stats = (
-                df[categorical_columns]
-                .describe()
-                .T
-                .reset_index()
-                .rename(columns={"index": "Column"})
-            )
-
-            st.dataframe(
-                categorical_stats,
-                use_container_width=True,
-            )
 
     st.divider()
 
@@ -302,7 +320,7 @@ def main() -> None:
     )
 
     # Identify the currently loaded dataset.
-    # Reset selections when the dataset changes.
+    # This helps reset selections when the dataset changes.
     dataset_signature = (
         data_source,
         tuple(all_columns),
@@ -568,18 +586,14 @@ def main() -> None:
         type="primary",
     ):
 
-        with st.status(
-            "Preparing model evaluation...",
-            expanded=True,
-        ) as training_status:
+        with st.spinner(
+            "Processing data, training model, "
+            "and evaluating performance..."
+        ):
 
             try:
-                # 1. Split Data
-                training_status.update(
-                    label="Step 1/5: Splitting dataset...",
-                    state="running",
-                )
 
+                # 1. Split Data
                 X_train, X_test, y_train, y_test = (
                     PreprocessingService.split_data(
                         df=df,
@@ -590,12 +604,7 @@ def main() -> None:
                     )
                 )
 
-                # 2. Preprocess Features
-                training_status.update(
-                    label="Step 2/5: Preprocessing features...",
-                    state="running",
-                )
-
+                # 2. Build Preprocessor
                 # Fit on training data only to prevent data leakage
                 preprocessor = (
                     PreprocessingService.create_preprocessor(
@@ -614,36 +623,42 @@ def main() -> None:
                 )
 
                 # 3. Train Model
-                training_status.update(
-                    label="Step 3/5: Training model...",
-                    state="running",
-                )
-
                 train_result = ModelService.train_model(
                     model_name=selected_model_name,
                     X_train=X_train_proc,
                     y_train=y_train,
                     params=configured_params,
                 )
-
-                model = train_result["model"]
-                training_time = train_result["training_time_seconds"]
-
-                # 4. Generate Predictions
-                training_status.update(
-                    label="Step 4/5: Generating predictions...",
-                    state="running",
+                st.session_state.audit_service.log_event(
+                    event_type="MODEL_TRAINING_SUCCESS",
+                    username=user["username"],
+                    details={
+                        "model": selected_model_name,
+                        "task_type" : task_type,
+                        "training_time_seconds": train_result[
+                            "training_time_seconds"
+                        ],
+                    },
                 )
 
+                model = train_result["model"]
+
+                training_time = train_result[
+                    "training_time_seconds"
+                ]
+
+                # 4. Predict
                 y_pred = model.predict(X_test_proc)
 
-                # 5. Evaluate Model
-                training_status.update(
-                    label="Step 5/5: Evaluating model...",
-                    state="running",
+                # 5. Evaluate
+                st.success(
+                    f"Model '{selected_model_name}' "
+                    f"trained successfully in "
+                    f"{training_time:.3f} seconds!"
                 )
 
                 if is_classification:
+
                     eval_results = (
                         EvaluationService.evaluate_classification(
                             y_true=y_test,
@@ -693,6 +708,7 @@ def main() -> None:
                     )
 
                 else:
+
                     eval_results = (
                         EvaluationService.evaluate_regression(
                             y_true=y_test,
@@ -721,7 +737,15 @@ def main() -> None:
                         "R² Score",
                         f"{eval_results['r2_score']:.4f}",
                     )
-
+                # Log successful evaluation
+                st.session_state.audit_service.log_event(
+                    event_type="MODEL_EVALUATION_SUCCESS",
+                    username=user["username"],
+                    details={
+                        "model": selected_model_name,
+                        "task_type": task_type,
+                    },
+                )
                 # Display Predictions
                 st.markdown(
                     "#### Sample Predictions vs Actual Values"
@@ -737,30 +761,13 @@ def main() -> None:
                     use_container_width=True,
                 )
 
-                # Mark the workflow complete only after evaluation succeeds.
-                training_status.update(
-                    label="Model training and evaluation completed.",
-                    state="complete",
-                )
-
-                st.success(
-                    f"Model '{selected_model_name}' trained and "
-                    f"evaluated successfully in "
-                    f"{training_time:.3f} seconds."
-                )
-
             except (
                 PreprocessingError,
                 DatasetValidationError,
             ) as e:
 
-                training_status.update(
-                    label="Model evaluation could not be completed.",
-                    state="error",
-                )
-
                 st.error(
-                    f"Unable to process this dataset: {e}"
+                    f"Unable to evaluate this dataset: {e}"
                 )
 
                 st.info(
@@ -769,22 +776,13 @@ def main() -> None:
                     "then try again."
                 )
 
-            except Exception:
-                training_status.update(
-                    label="Model evaluation failed.",
-                    state="error",
-                )
-
-                logger.exception(
-                    "Unexpected error during model training or evaluation."
-                )
+            except Exception as e:
 
                 st.error(
-                    "Something went wrong while training or evaluating "
-                    "the model. Please check your dataset and settings, "
-                    "then try again. If the problem continues, contact "
-                    "the project administrator."
+                    "Model evaluation failed unexpectedly."
                 )
+
+                st.exception(e)
 
 
 if __name__ == "__main__":
