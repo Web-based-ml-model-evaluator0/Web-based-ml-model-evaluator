@@ -19,10 +19,12 @@ class AuditService:
     }
 
     SENSITIVE_VALUE_PATTERN = re.compile(
-        r"""(?i)\b(password|token|secret|api[_-]?key|
-        authorization|credential)\b\s*[:=]\s*
-        (\"[^\"]*\"|'[^']*'|[^\s,;]+)""",
+        r"""(?i)\b(password|token|secret|api[_-]?key|authorization|credential)\b\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,;]+)""",
         re.VERBOSE,
+    )
+
+    BEARER_TOKEN_PATTERN = re.compile(
+        r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"
     )
 
     def __init__(self, log_file="logs/audit.log"):
@@ -79,6 +81,13 @@ class AuditService:
             )
 
         if isinstance(value, str):
+            # Redact complete Bearer authorization tokens.
+            value = cls.BEARER_TOKEN_PATTERN.sub(
+                "Bearer [REDACTED]",
+                value,
+            )
+
+            # Redact other credential assignments.
             return cls.SENSITIVE_VALUE_PATTERN.sub(
                 lambda match: (
                     f"{match.group(1)}=[REDACTED]"
@@ -101,3 +110,20 @@ class AuditService:
         }
 
         self.logger.info(json.dumps(event, default=str))
+
+    def get_events(self):
+        """Read recorded audit events from the log file."""
+
+        events = []
+
+        if not self.log_file.exists():
+            return events
+
+        with self.log_file.open("r", encoding="utf-8") as file:
+            for line in file:
+                try:
+                    events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+
+        return events

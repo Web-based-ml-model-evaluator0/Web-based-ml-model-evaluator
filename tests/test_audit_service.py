@@ -169,3 +169,39 @@ def test_audit_service_preserves_non_sensitive_details(tmp_path):
     assert "login" in content
     assert "success" in content
 
+
+def test_audit_service_redacts_bearer_tokens(tmp_path):
+    log_file = tmp_path / "audit.log"
+    audit = AuditService(log_file)
+
+    audit.log_event(
+        "test",
+        details={
+            "message": "Authorization: Bearer abc123secret",
+        },
+    )
+
+    content = log_file.read_text(encoding="utf-8")
+
+    assert "abc123secret" not in content
+    assert "[REDACTED]" in content
+
+
+def test_audit_service_get_events(tmp_path):
+    log_file = tmp_path / "audit.log"
+    audit = AuditService(log_file)
+
+    audit.log_event(
+        "LOGIN_SUCCESS",
+        username="alice",
+        details={"role": "student"},
+    )
+
+    events = audit.get_events()
+
+    assert len(events) == 1
+    assert events[0]["event_type"] == "LOGIN_SUCCESS"
+    assert events[0]["username"] == "alice"
+    assert events[0]["details"]["role"] == "student"
+
+
