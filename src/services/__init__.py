@@ -13,6 +13,7 @@ from .model_service import (
 from .evaluation_service import EvaluationService
 from .experiment_service import ExperimentStorageService
 from .validation_service import APIInputValidator, APIValidationError
+from .security_service import SecurityConfigService, TLSSecurityError
 
 __all__ = [
     "DatasetService",
@@ -27,4 +28,6 @@ __all__ = [
     "ExperimentStorageService",
     "APIInputValidator",
     "APIValidationError",
+    "SecurityConfigService",
+    "TLSSecurityError",
 ]
