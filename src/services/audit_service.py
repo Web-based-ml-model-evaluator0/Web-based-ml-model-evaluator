@@ -12,6 +12,8 @@ class AuditService:
         self.log_file = Path(log_file)
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
 
+
+        # Use a separate logger for each log file.
         logger_name = (
             f"ml_model_evaluator.audit.{self.log_file.resolve()}"
         )
@@ -76,3 +78,4 @@ class AuditService:
                     continue
 
         return events
+
