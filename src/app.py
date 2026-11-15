@@ -221,7 +221,8 @@ def main() -> None:
     profile = DatasetService.get_dataset_profile(df)
 
     # Dataset overview metrics
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
+    col3, col4 = st.columns(2)
 
     col1.metric("Total Rows", profile["num_rows"])
     col2.metric("Total Columns", profile["num_columns"])
@@ -477,9 +478,7 @@ def main() -> None:
         "⚙️ Preprocessing & Model Configuration"
     )
 
-    cfg_col1, cfg_col2, cfg_col3 = st.columns(3)
-
-    with cfg_col1:
+    with st.container():
 
         test_size_pct = st.slider(
             "Test Set Split Ratio (%)",
@@ -491,7 +490,7 @@ def main() -> None:
 
         test_size = test_size_pct / 100.0
 
-    with cfg_col2:
+    with st.container():
 
         missing_strategy = st.selectbox(
             "Missing Value Imputation:",
@@ -507,7 +506,7 @@ def main() -> None:
             value=True,
         )
 
-    with cfg_col3:
+    with st.container():
 
         supported_models = (
             ModelService.get_supported_models(
@@ -538,14 +537,14 @@ def main() -> None:
             expanded=False,
         ):
 
-            pcols = st.columns(len(param_schema))
+            pcols = st.columns(min(2, len(param_schema)))
 
             for i, (
                 param_name,
                 schema,
             ) in enumerate(param_schema.items()):
 
-                with pcols[i]:
+                with pcols[i % len(pcols)]:
 
                     if schema["type"] == "int":
 
@@ -685,7 +684,8 @@ def main() -> None:
                         )
                     )
 
-                    m1, m2, m3, m4 = st.columns(4)
+                    m1, m2 = st.columns(2)
+                    m3, m4 = st.columns(2)
 
                     m1.metric(
                         "Accuracy",
@@ -734,7 +734,8 @@ def main() -> None:
                         )
                     )
 
-                    m1, m2, m3, m4 = st.columns(4)
+                    m1, m2 = st.columns(2)
+                    m3, m4 = st.columns(2)
 
                     m1.metric(
                         "MAE",
