@@ -3,6 +3,9 @@
 Experiment Storage Service module (ML-F-016, TC-HIST-01).
 Provides persistence and retrieval of experiment configurations,
 hyperparameters, training execution metadata, and evaluation results.
+=======
+Provides persistence, integrity verification, and access-controlled
+retrieval of experiment configurations and evaluation results.
 """
 
 from typing import Any, Dict, List, Optional
@@ -29,6 +32,14 @@ class ExperimentStorageService:
     DEFAULT_DB_PATH = Path("experiments") / "experiments.db"
 
     def __init__(self, db_path: Optional[Path | str] = None) -> None:
+
+
+class ExperimentStorageService:
+    """SQLite-backed experiment storage with integrity and access control."""
+
+    DEFAULT_DB_PATH = Path("experiments") / "experiments.db"
+
+    def __init__(self, db_path: Optional[Path | str] = None):
         if db_path is None:
             self.db_path = self.DEFAULT_DB_PATH
         elif str(db_path) == ":memory:":
@@ -43,6 +54,8 @@ class ExperimentStorageService:
 
     def _get_connection(self) -> sqlite3.Connection:
         """Returns a connection to the SQLite database."""
+    def _get_connection(self):
+
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
         return conn
@@ -80,6 +93,10 @@ class ExperimentStorageService:
         with self._get_connection() as conn:
             conn.execute(
                 """
+    def _init_db(self):
+        with self._get_connection() as conn:
+            conn.execute("""
+
                 CREATE TABLE IF NOT EXISTS experiments (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     experiment_id TEXT UNIQUE NOT NULL,
@@ -115,6 +132,7 @@ class ExperimentStorageService:
                     "ALTER TABLE experiments ADD COLUMN metrics_hash TEXT"
                 )
 
+            """)
             conn.commit()
 
     def save_experiment(
@@ -125,6 +143,10 @@ class ExperimentStorageService:
         status: str = "COMPLETED",
     ) -> str:
         """Stores experiment configuration and metrics with integrity hashes."""
+        username: Optional[str] = None,
+    ) -> str:
+        """Store an experiment and associate it with its owner."""
+
 
         if not experiment_id:
             experiment_id = f"EXP-{uuid.uuid4().hex[:8].upper()}"
@@ -155,6 +177,25 @@ class ExperimentStorageService:
         with self._get_connection() as conn:
             conn.execute(
                 """
+
+        config_json = json.dumps(config, sort_keys=True, default=str)
+        metrics_json = json.dumps(metrics, sort_keys=True, default=str)
+
+        with self._get_connection() as conn:
+            columns = {
+                row["name"]
+                for row in conn.execute(
+                    "PRAGMA table_info(experiments)"
+                )
+            }
+
+            if "owner" not in columns:
+                conn.execute(
+                    "ALTER TABLE experiments ADD COLUMN owner TEXT"
+                )
+
+            conn.execute("""
+
                 INSERT INTO experiments (
                     experiment_id, created_at, model_name, task_type,
                     target_column, feature_count, split_ratio,
@@ -178,6 +219,26 @@ class ExperimentStorageService:
                     metrics_hash,
                 ),
             )
+                    status, owner
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                experiment_id,
+                created_at,
+                str(config.get("model_name", "Unknown Model")),
+                str(config.get("task_type", "classification")),
+                str(config.get("target_column", "")),
+                int(config.get("feature_count", 0)),
+                float(config.get("split_ratio", 0.20)),
+                float(metrics.get(
+                    "training_time_seconds",
+                    config.get("training_time_seconds", 0.0)
+                )),
+                config_json,
+                metrics_json,
+                status,
+                username,
+            ))
+
             conn.commit()
 
         return experiment_id
@@ -187,6 +248,12 @@ class ExperimentStorageService:
         experiment_id: str,
     ) -> Optional[Dict[str, Any]]:
         """Retrieves an experiment and verifies stored data integrity."""
+
+        username: Optional[str] = None,
+        role: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Retrieve an experiment only when access is permitted."""
+
 
         with self._get_connection() as conn:
             row = conn.execute(
@@ -228,6 +295,14 @@ class ExperimentStorageService:
                     )
 
                 integrity_status = "VERIFIED"
+            if row is None:
+                return None
+
+            owner = row["owner"] if "owner" in row.keys() else None
+
+            if role not in {"admin", "evaluator"}:
+                if not username or owner != username:
+                    return None
 
             return {
                 "experiment_id": row["experiment_id"],
@@ -293,6 +368,89 @@ class ExperimentStorageService:
                 "DELETE FROM experiments WHERE experiment_id = ?",
                 (experiment_id,),
             )
+                "config": json.loads(row["config_json"]),
+                "metrics": json.loads(row["metrics_json"]),
+                "status": row["status"],
+            }
+
+    def list_experiments(
+        self,
+        limit: int = 50,
+        username: Optional[str] = None,
+        role: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """List only experiments accessible to the requesting user."""
+
+        with self._get_connection() as conn:
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(experiments)")
+            }
+
+            if "owner" not in columns:
+                conn.execute(
+                    "ALTER TABLE experiments ADD COLUMN owner TEXT"
+                )
+
+            if role in {"admin", "evaluator"}:
+                rows = conn.execute("""
+                    SELECT * FROM experiments
+                    ORDER BY id DESC LIMIT ?
+                """, (limit,)).fetchall()
+            else:
+                if not username:
+                    return []
+
+                rows = conn.execute("""
+                    SELECT * FROM experiments
+                    WHERE owner = ?
+                    ORDER BY id DESC LIMIT ?
+                """, (username, limit)).fetchall()
+
+            results = []
+            for row in rows:
+                metrics = json.loads(row["metrics_json"])
+                results.append({
+                    "experiment_id": row["experiment_id"],
+                    "created_at": row["created_at"],
+                    "model_name": row["model_name"],
+                    "task_type": row["task_type"],
+                    "target_column": row["target_column"],
+                    "feature_count": row["feature_count"],
+                    "split_ratio": row["split_ratio"],
+                    "training_time_seconds": row["training_time_seconds"],
+                    "status": row["status"],
+                    "accuracy": metrics.get("accuracy"),
+                    "f1_score": metrics.get("f1_score"),
+                    "r2_score": metrics.get("r2_score"),
+                })
+
+            return results
+
+    def delete_experiment(
+        self,
+        experiment_id: str,
+        username: Optional[str] = None,
+        role: Optional[str] = None,
+    ) -> bool:
+        """Delete an experiment only if the requester has permission."""
+
+        with self._get_connection() as conn:
+            if role in {"admin", "evaluator"}:
+                cursor = conn.execute(
+                    "DELETE FROM experiments WHERE experiment_id = ?",
+                    (experiment_id,),
+                )
+            else:
+                if not username:
+                    return False
+
+                cursor = conn.execute("""
+                    DELETE FROM experiments
+                    WHERE experiment_id = ? AND owner = ?
+                """, (experiment_id, username))
+
+
             conn.commit()
             return cursor.rowcount > 0
 
@@ -301,3 +459,11 @@ class ExperimentStorageService:
         with self._get_connection() as conn:
             cursor = conn.execute("SELECT COUNT(*) FROM experiments")
             return int(cursor.fetchone()[0])
+
+        with self._get_connection() as conn:
+            return int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM experiments"
+                ).fetchone()[0]
+            )
+
