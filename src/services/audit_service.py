@@ -102,6 +102,30 @@ class AuditService:
 
         safe_details = self._sanitize(details or {})
 
+    def log_event(self, event_type, username=None, details=None):
+        """Record an event without storing sensitive credentials."""
+
+        details = details or {}
+
+        sensitive_fields = {
+            "password",
+            "token",
+            "secret",
+            "api_key",
+            "authorization",
+            "credential",
+        }
+
+        safe_details = {
+            key: value
+            for key, value in details.items()
+            if not any(
+                field in key.lower()
+                for field in sensitive_fields
+            )
+        }
+
+
         event = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": event_type,

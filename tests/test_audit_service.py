@@ -82,7 +82,6 @@ def test_audit_event_timestamp_is_valid(tmp_path):
 
     assert timestamp.tzinfo is not None
 
-
 def test_audit_service_redacts_nested_credentials(tmp_path):
     from src.services.audit_service import AuditService
 
@@ -203,5 +202,4 @@ def test_audit_service_get_events(tmp_path):
     assert events[0]["event_type"] == "LOGIN_SUCCESS"
     assert events[0]["username"] == "alice"
     assert events[0]["details"]["role"] == "student"
-
 
